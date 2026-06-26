@@ -943,8 +943,22 @@
     }
 
     function hideSuggestions() {
-      document.getElementById("suggestBox").hidden = true;
+      const box = document.getElementById("suggestBox");
+      box.hidden = true;
       fitMobileSheet();
+    }
+
+    function chooseSuggestion(button) {
+      if (!button) return;
+      const box = document.getElementById("suggestBox");
+      const key = box.dataset.targetKey;
+      const input = document.querySelector(`[data-key="${key}"]`);
+      if (!input) return;
+      input.value = button.dataset.suggest;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      fillPartNumberForPartInput(input);
+      hideSuggestions();
+      input.focus();
     }
 
     function renderCandidateList() {
@@ -1398,20 +1412,31 @@
     });
 
     document.getElementById("estimateView").addEventListener("focusout", (event) => {
-      setTimeout(hideSuggestions, 160);
+      setTimeout(() => {
+        const box = document.getElementById("suggestBox");
+        if (box.matches(":hover") || box.contains(document.activeElement)) return;
+        hideSuggestions();
+      }, 800);
     });
+
+    document.getElementById("suggestBox").addEventListener("pointerdown", (event) => {
+      const button = event.target.closest("[data-suggest]");
+      if (!button) return;
+      event.preventDefault();
+      chooseSuggestion(button);
+    });
+
+    document.getElementById("suggestBox").addEventListener("touchstart", (event) => {
+      const button = event.target.closest("[data-suggest]");
+      if (!button) return;
+      event.preventDefault();
+      chooseSuggestion(button);
+    }, { passive: false });
 
     document.getElementById("suggestBox").addEventListener("click", (event) => {
       const button = event.target.closest("[data-suggest]");
       if (!button) return;
-      const key = event.currentTarget.dataset.targetKey;
-      const input = document.querySelector(`[data-key="${key}"]`);
-      if (!input) return;
-      input.value = button.dataset.suggest;
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      fillPartNumberForPartInput(input);
-      hideSuggestions();
-      input.focus();
+      chooseSuggestion(button);
     });
 
     document.getElementById("candidateAddBtn").addEventListener("click", addCandidateFromList);
