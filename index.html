@@ -730,34 +730,56 @@
       return columns.some((name) => String(row[name] || "").trim());
     }
 
-    function rowsWithEffectiveMaker(rows) {
+    function rowsWithEffectiveContext(rows) {
+      let currentPlace = "";
       let currentMaker = "";
       return rows.map((row) => {
+        const place = String(row.place || "").trim();
         const maker = String(row.maker || "").trim();
+        if (place && place !== currentPlace) {
+          currentPlace = place;
+          currentMaker = "";
+        }
         if (maker) currentMaker = maker;
-        return { ...row, effectiveMaker: maker || currentMaker };
+        return { ...row, effectivePlace: place || currentPlace, effectiveMaker: maker || currentMaker };
       });
     }
 
     function sortRowsByMaker() {
-      const rows = rowsWithEffectiveMaker(valuesToRows(collect()));
+      const rows = rowsWithEffectiveContext(valuesToRows(collect()));
       const filled = rows.filter(rowHasContent);
       const emptyCount = rows.length - filled.length;
-      const makerOrder = [];
+      const placeOrder = [];
       filled.forEach((row) => {
-        const maker = String(row.effectiveMaker || row.maker || "").trim();
-        if (maker && !makerOrder.includes(maker)) makerOrder.push(maker);
+        const place = String(row.effectivePlace || row.place || "").trim();
+        if (place && !placeOrder.includes(place)) placeOrder.push(place);
       });
-      const makerRows = makerOrder.flatMap((maker) =>
-        filled.filter((row) => String(row.effectiveMaker || row.maker || "").trim() === maker)
+      const placeRows = placeOrder.flatMap((place) => {
+        const group = filled.filter((row) => String(row.effectivePlace || row.place || "").trim() === place);
+        const makerOrder = [];
+        group.forEach((row) => {
+          const maker = String(row.effectiveMaker || row.maker || "").trim();
+          if (maker && !makerOrder.includes(maker)) makerOrder.push(maker);
+        });
+        const makerRows = makerOrder.flatMap((maker) =>
+          group.filter((row) => String(row.effectiveMaker || row.maker || "").trim() === maker)
+        );
+        const noMakerRows = group.filter((row) => !String(row.effectiveMaker || row.maker || "").trim());
+        return [...makerRows, ...noMakerRows];
+      });
+      const noPlaceRows = filled.filter((row) =>
+        !String(row.effectivePlace || row.place || "").trim()
       );
-      const noMakerRows = filled.filter((row) => !String(row.effectiveMaker || row.maker || "").trim());
+      let previousPlace = "";
       let previousMaker = "";
-      const displayRows = [...makerRows, ...noMakerRows].map((row) => {
+      const displayRows = [...placeRows, ...noPlaceRows].map((row) => {
+        const place = String(row.effectivePlace || row.place || "").trim();
         const maker = String(row.effectiveMaker || row.maker || "").trim();
-        const displayMaker = maker && maker === previousMaker ? "" : maker;
+        const samePlace = place && place === previousPlace;
+        const displayMaker = maker && samePlace && maker === previousMaker ? "" : maker;
+        if (place) previousPlace = place;
         if (maker) previousMaker = maker;
-        const { effectiveMaker, ...cleanRow } = row;
+        const { effectivePlace, effectiveMaker, ...cleanRow } = row;
         return { ...cleanRow, maker: displayMaker };
       });
       writeRows([...displayRows, ...Array.from({ length: emptyCount }, () => ({}))]);
@@ -927,7 +949,7 @@
     function rememberMakerModels(data) {
       const map = readMakerModelMap();
       const partMap = readMakerModelPartMap();
-      rowsWithEffectiveMaker(valuesToRows(data)).forEach((row) => {
+      rowsWithEffectiveContext(valuesToRows(data)).forEach((row) => {
         const maker = String(row.effectiveMaker || row.maker || "").trim();
         const model = String(row.model || "").trim();
         const part = String(row.part || "").trim();
@@ -944,7 +966,7 @@
 
     function rememberPartNumbers(data) {
       const map = readPartNumberMap();
-      rowsWithEffectiveMaker(valuesToRows(data)).forEach((row) => {
+      rowsWithEffectiveContext(valuesToRows(data)).forEach((row) => {
         const maker = String(row.effectiveMaker || row.maker || "").trim();
         const model = String(row.model || "").trim();
         const part = String(row.part || "").trim();
@@ -964,15 +986,23 @@
     function rowContextFromKey(key) {
       const index = rowIndexFromKey(key);
       if (index === null) return { index: null, maker: "", model: "", part: "" };
+      let place = document.querySelector(`[data-key="items.${index}.place"]`)?.value.trim() || "";
       let maker = document.querySelector(`[data-key="items.${index}.maker"]`)?.value.trim() || "";
       if (!maker) {
         for (let i = index - 1; i >= 0; i -= 1) {
-          maker = document.querySelector(`[data-key="items.${i}.maker"]`)?.value.trim() || "";
-          if (maker) break;
+          const previousPlace = document.querySelector(`[data-key="items.${i}.place"]`)?.value.trim() || "";
+          if (!place && previousPlace) place = previousPlace;
+          if (place && previousPlace && previousPlace !== place) break;
+          const previousMaker = document.querySelector(`[data-key="items.${i}.maker"]`)?.value.trim() || "";
+          if (previousMaker) {
+            maker = previousMaker;
+            break;
+          }
         }
       }
       return {
         index,
+        place,
         maker,
         model: document.querySelector(`[data-key="items.${index}.model"]`)?.value.trim() || "",
         part: document.querySelector(`[data-key="items.${index}.part"]`)?.value.trim() || "",
