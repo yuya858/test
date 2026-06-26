@@ -681,9 +681,12 @@
 
     function makeRow(index) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td class="row-number">${index + 1}</td>` + columns.map((name) =>
-        `<td><input class="entry" data-key="items.${index}.${name}" aria-label="${name}"></td>`
-      ).join("");
+      tr.innerHTML = `<td class="row-number">${index + 1}</td>` + columns.map((name) => {
+        const noAutocomplete = name === "serial"
+          ? ' autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"'
+          : "";
+        return `<td><input class="entry" data-key="items.${index}.${name}" aria-label="${name}"${noAutocomplete}></td>`;
+      }).join("");
       return tr;
     }
 
