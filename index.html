@@ -474,6 +474,7 @@
     </div>
     <button class="primary" id="saveBtn" type="button">保存</button>
     <button id="newBtn" type="button">新規</button>
+    <button id="undoBtn" type="button" disabled>一つ前へ戻る</button>
     <button id="printBtn" type="button">印刷</button>
     <button id="addRowBtn" type="button">行追加</button>
     <button id="removeRowBtn" type="button">行削除</button>
@@ -671,6 +672,15 @@
       </div>
     </div>
   </div>
+  <div class="confirm-backdrop" id="undoConfirm" hidden>
+    <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="undoConfirmTitle">
+      <p id="undoConfirmTitle">一つ前へ戻りますか？</p>
+      <div class="confirm-actions">
+        <button id="undoNoBtn" type="button">いいえ</button>
+        <button class="danger" id="undoYesBtn" type="button">はい</button>
+      </div>
+    </div>
+  </div>
   <script>
     const STORAGE_KEY = "mitsumori_irai_records_v2";
     const DRAFT_KEY = "mitsumori_irai_drafts_v2";
@@ -690,6 +700,8 @@
     let pendingPermanentDelete = null;
     let activeCandidateKey = "user_name";
     let candidateBackStack = [];
+    let undoStack = [];
+    let lastUndoSnapshot = "";
 
     function makeRow(index) {
       const tr = document.createElement("tr");
@@ -1083,6 +1095,7 @@
       const key = box.dataset.targetKey;
       const input = document.querySelector(`[data-key="${key}"]`);
       if (!input) return;
+      rememberUndoState();
       input.value = button.dataset.suggest;
       input.dispatchEvent(new Event("input", { bubbles: true }));
       fillPartNumberForPartInput(input, true);
@@ -1201,6 +1214,7 @@
     }
 
     function addCandidateToEstimate(maker, model, part, partNo) {
+      rememberUndoState();
       const rows = valuesToRows(collect());
       let index = rows.findIndex((row) =>
         !String(row.maker || "").trim() &&
@@ -1331,6 +1345,41 @@
       return JSON.stringify(data || collect());
     }
 
+    function updateUndoButton() {
+      document.getElementById("undoBtn").disabled = undoStack.length === 0;
+    }
+
+    function rememberUndoState() {
+      const snapshot = dataJson(collect());
+      if (snapshot === lastUndoSnapshot) return;
+      undoStack.push(snapshot);
+      if (undoStack.length > 40) undoStack.shift();
+      lastUndoSnapshot = snapshot;
+      updateUndoButton();
+    }
+
+    function openUndoConfirm() {
+      if (!undoStack.length) return;
+      document.getElementById("undoConfirm").hidden = false;
+    }
+
+    function closeUndoConfirm() {
+      document.getElementById("undoConfirm").hidden = true;
+    }
+
+    function confirmUndo() {
+      const snapshot = undoStack.pop();
+      if (!snapshot) return closeUndoConfirm();
+      const data = JSON.parse(snapshot);
+      apply(data);
+      lastUndoSnapshot = dataJson(data);
+      fitMobileSheet();
+      fitPrintRows();
+      updatePrimaryButtons();
+      updateUndoButton();
+      closeUndoConfirm();
+    }
+
     function hasContent(data) {
       return Object.entries(data).some(([key, value]) => key !== "rowCount" && String(value || "").trim() !== "");
     }
@@ -1422,6 +1471,7 @@
 
     function saveRecord() {
       if (!hasContent(collect())) return;
+      rememberUndoState();
       sortRowsByMaker();
       const records = readList(STORAGE_KEY);
       const data = collect();
@@ -1655,6 +1705,9 @@
 
     document.getElementById("saveBtn").addEventListener("click", saveRecord);
     document.getElementById("newBtn").addEventListener("click", newRecord);
+    document.getElementById("undoBtn").addEventListener("click", openUndoConfirm);
+    document.getElementById("undoNoBtn").addEventListener("click", closeUndoConfirm);
+    document.getElementById("undoYesBtn").addEventListener("click", confirmUndo);
     document.getElementById("printBtn").addEventListener("click", () => window.print());
     document.getElementById("savedSearchInput").addEventListener("input", () => renderRecordList("saved"));
     document.getElementById("savedSearchClearBtn").addEventListener("click", () => {
@@ -1662,6 +1715,7 @@
       renderRecordList("saved");
     });
     document.getElementById("addRowBtn").addEventListener("click", () => {
+      rememberUndoState();
       const data = collect();
       renderRows(itemRows.children.length + 1);
       apply({ ...data, rowCount: itemRows.children.length });
@@ -1670,6 +1724,7 @@
       updatePrimaryButtons();
     });
     document.getElementById("removeRowBtn").addEventListener("click", () => {
+      rememberUndoState();
       deleteRow();
     });
     document.getElementById("clearBtn").addEventListener("click", () => {
@@ -1677,6 +1732,7 @@
     });
     document.getElementById("clearNoBtn").addEventListener("click", closeClearConfirm);
     document.getElementById("clearYesBtn").addEventListener("click", () => {
+      rememberUndoState();
       fields().forEach((el) => { el.value = ""; });
       closeClearConfirm();
       updatePrimaryButtons();
@@ -1694,6 +1750,7 @@
 
     document.getElementById("estimateView").addEventListener("focusin", (event) => {
       if (event.target.matches("[data-key]")) {
+        rememberUndoState();
         activeInput = event.target;
         hideSuggestions();
       }
@@ -1796,6 +1853,7 @@
     fitMobileSheet();
     fitPrintRows();
     updatePrimaryButtons();
+    updateUndoButton();
     window.addEventListener("resize", fitMobileSheet);
     window.addEventListener("orientationchange", fitMobileSheet);
   </script>
