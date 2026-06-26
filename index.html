@@ -657,6 +657,15 @@
       </div>
     </div>
   </div>
+  <div class="confirm-backdrop" id="permanentDeleteConfirm" hidden>
+    <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="permanentDeleteTitle">
+      <p id="permanentDeleteTitle">完全削除しますか？</p>
+      <div class="confirm-actions">
+        <button id="permanentDeleteNoBtn" type="button">いいえ</button>
+        <button class="danger" id="permanentDeleteYesBtn" type="button">はい</button>
+      </div>
+    </div>
+  </div>
   <script>
     const STORAGE_KEY = "mitsumori_irai_records_v2";
     const DRAFT_KEY = "mitsumori_irai_drafts_v2";
@@ -673,6 +682,7 @@
     let lastSavedJson = "";
     let activeInput = null;
     let pendingCandidateDelete = null;
+    let pendingPermanentDelete = null;
     let activeCandidateKey = "user_name";
 
     function makeRow(index) {
@@ -1365,6 +1375,34 @@
       renderRecordList("trash");
     }
 
+    function deleteCandidateForever(index) {
+      const list = readList(CANDIDATE_TRASH_KEY);
+      list.splice(Number(index), 1);
+      writeList(CANDIDATE_TRASH_KEY, list);
+      renderRecordList("trash");
+    }
+
+    function askPermanentDelete(type, value, label) {
+      pendingPermanentDelete = { type, value };
+      document.getElementById("permanentDeleteTitle").textContent = `${label}を完全削除しますか？`;
+      document.getElementById("permanentDeleteConfirm").hidden = false;
+    }
+
+    function closePermanentDeleteConfirm() {
+      document.getElementById("permanentDeleteConfirm").hidden = true;
+      pendingPermanentDelete = null;
+    }
+
+    function confirmPermanentDelete() {
+      if (pendingPermanentDelete?.type === "estimate") {
+        deleteForever(pendingPermanentDelete.value);
+      }
+      if (pendingPermanentDelete?.type === "candidate") {
+        deleteCandidateForever(pendingPermanentDelete.value);
+      }
+      closePermanentDeleteConfirm();
+    }
+
     function fitMobileSheet() {
       const estimateView = document.getElementById("estimateView");
       const sheet = document.getElementById("sheet");
@@ -1444,13 +1482,14 @@
       return `
         <h2 style="margin-top:18px;">削除した候補</h2>
         <table class="record-table">
-          <thead><tr><th>項目</th><th>候補</th><th>削除日時</th></tr></thead>
+          <thead><tr><th>項目</th><th>候補</th><th>削除日時</th><th>操作</th></tr></thead>
           <tbody>
-            ${list.map((item) => `
+            ${list.map((item, index) => `
               <tr>
                 <td>${escapeHtml(item.label || candidateLabel(item.key))}</td>
                 <td>${escapeHtml(item.value)}</td>
                 <td>${escapeHtml(item.deletedAt)}</td>
+                <td><button class="danger" type="button" data-action="deleteCandidateForever" data-index="${index}">完全削除</button></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1582,8 +1621,12 @@
       const button = event.target.closest("button[data-action]");
       if (!button) return;
       if (button.dataset.action === "restore") restoreRecord(button.dataset.id);
-      if (button.dataset.action === "delete") deleteForever(button.dataset.id);
+      if (button.dataset.action === "delete") askPermanentDelete("estimate", button.dataset.id, "この見積もり");
+      if (button.dataset.action === "deleteCandidateForever") askPermanentDelete("candidate", button.dataset.index, "この候補");
     });
+
+    document.getElementById("permanentDeleteNoBtn").addEventListener("click", closePermanentDeleteConfirm);
+    document.getElementById("permanentDeleteYesBtn").addEventListener("click", confirmPermanentDelete);
 
     window.addEventListener("beforeprint", fitPrintRows);
 
