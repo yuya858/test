@@ -622,11 +622,7 @@
           <button type="button" data-candidate-key="property_name">物件名</button>
           <button type="button" data-candidate-key="items.maker">メーカー</button>
         </div>
-        <div id="makerCandidateTabs" style="display:none; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-          <button type="button" data-candidate-key="items.model">型式</button>
-          <button type="button" data-candidate-key="items.part">部品名</button>
-          <button type="button" data-candidate-key="items.part_no">部品番号</button>
-        </div>
+        <div id="makerCandidateTabs" hidden></div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
           <input id="candidateText" style="min-height:36px; padding:0 8px; min-width:220px;" placeholder="候補に追加する文字">
           <button id="candidateAddBtn" type="button">候補追加</button>
@@ -1012,10 +1008,7 @@
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
-      document.getElementById("makerCandidateTabs").style.display =
-        activeCandidateKey === "items.maker" || ["items.model", "items.part", "items.part_no"].includes(activeCandidateKey)
-          ? "flex"
-          : "none";
+      document.getElementById("makerCandidateTabs").style.display = "none";
       if (!rows.length) {
         target.innerHTML = `<div class="empty">${candidateLabel(activeCandidateKey)}の候補はまだありません</div>`;
         return;
@@ -1043,7 +1036,7 @@
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
-      document.getElementById("makerCandidateTabs").style.display = "flex";
+      document.getElementById("makerCandidateTabs").style.display = "none";
       const target = document.getElementById("candidateList");
       if (!models.length) {
         target.innerHTML = `<div class="empty">${escapeHtml(maker)}の型式候補はまだありません</div>`;
@@ -1070,7 +1063,7 @@
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
-      document.getElementById("makerCandidateTabs").style.display = "flex";
+      document.getElementById("makerCandidateTabs").style.display = "none";
       const target = document.getElementById("candidateList");
       if (!parts.length) {
         target.innerHTML = `<div class="empty">${escapeHtml(maker)} / ${escapeHtml(model)} の部品候補はまだありません</div>`;
