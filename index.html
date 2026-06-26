@@ -621,6 +621,7 @@
           <button class="active" type="button" data-candidate-key="user_name">ユーザー名</button>
           <button type="button" data-candidate-key="property_name">物件名</button>
           <button type="button" data-candidate-key="items.maker">メーカー</button>
+          <button id="candidateBackBtn" type="button" hidden>一つ前に戻る</button>
         </div>
         <div id="makerCandidateTabs" hidden></div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
@@ -684,6 +685,7 @@
     let pendingCandidateDelete = null;
     let pendingPermanentDelete = null;
     let activeCandidateKey = "user_name";
+    let candidateBackStack = [];
 
     function makeRow(index) {
       const tr = document.createElement("tr");
@@ -718,6 +720,26 @@
           if (input) input.value = row[name] || "";
         });
       });
+    }
+
+    function rowHasContent(row) {
+      return columns.some((name) => String(row[name] || "").trim());
+    }
+
+    function sortRowsByMaker() {
+      const rows = valuesToRows(collect());
+      const filled = rows.filter(rowHasContent);
+      const emptyCount = rows.length - filled.length;
+      const makerOrder = [];
+      filled.forEach((row) => {
+        const maker = String(row.maker || "").trim();
+        if (maker && !makerOrder.includes(maker)) makerOrder.push(maker);
+      });
+      const makerRows = makerOrder.flatMap((maker) =>
+        filled.filter((row) => String(row.maker || "").trim() === maker)
+      );
+      const noMakerRows = filled.filter((row) => !String(row.maker || "").trim());
+      writeRows([...makerRows, ...noMakerRows, ...Array.from({ length: emptyCount }, () => ({}))]);
     }
 
     function fields() {
@@ -1019,6 +1041,7 @@
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
+      updateCandidateBackButton();
       if (!rows.length) {
         target.innerHTML = `<div class="empty">${candidateLabel(activeCandidateKey)}の候補はまだありません</div>`;
         return;
@@ -1040,13 +1063,19 @@
         </table>`;
     }
 
-    function showModelsForMaker(maker) {
+    function updateCandidateBackButton() {
+      document.getElementById("candidateBackBtn").hidden = candidateBackStack.length === 0;
+    }
+
+    function showModelsForMaker(maker, rememberBack = true) {
+      if (rememberBack) candidateBackStack.push({ type: "list", key: activeCandidateKey });
       const models = readMakerModelMap()[maker] || [];
       activeCandidateKey = "items.model";
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
+      updateCandidateBackButton();
       const target = document.getElementById("candidateList");
       if (!models.length) {
         target.innerHTML = `<div class="empty">${escapeHtml(maker)}の型式候補はまだありません</div>`;
@@ -1067,13 +1096,15 @@
         </table>`;
     }
 
-    function showPartsForMakerModel(maker, model) {
+    function showPartsForMakerModel(maker, model, rememberBack = true) {
+      if (rememberBack) candidateBackStack.push({ type: "models", maker });
       const parts = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
       activeCandidateKey = "items.part";
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
+      updateCandidateBackButton();
       const target = document.getElementById("candidateList");
       if (!parts.length) {
         target.innerHTML = `<div class="empty">${escapeHtml(maker)} / ${escapeHtml(model)} の部品候補はまだありません</div>`;
@@ -1089,11 +1120,47 @@
                 <td>${escapeHtml(model)}</td>
                 <td>${escapeHtml(part)}</td>
                 <td>${escapeHtml(partNumberForRow(maker, model, part))}</td>
-                <td><button class="danger" type="button" data-action="askMakerModelPartDelete" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}">削除</button></td>
+                <td>
+                  <button type="button" data-action="addCandidateToEstimate" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}" data-part-no="${escapeHtml(partNumberForRow(maker, model, part))}">見積もりに追加</button>
+                  <button class="danger" type="button" data-action="askMakerModelPartDelete" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}">削除</button>
+                </td>
               </tr>
             `).join("")}
           </tbody>
         </table>`;
+    }
+
+    function goCandidateBack() {
+      const previous = candidateBackStack.pop();
+      if (!previous) return;
+      if (previous.type === "models") {
+        showModelsForMaker(previous.maker, false);
+      } else {
+        activeCandidateKey = previous.key;
+        renderCandidateList();
+      }
+      updateCandidateBackButton();
+    }
+
+    function addCandidateToEstimate(maker, model, part, partNo) {
+      const rows = valuesToRows(collect());
+      let index = rows.findIndex((row) =>
+        !String(row.maker || "").trim() &&
+        !String(row.model || "").trim() &&
+        !String(row.part || "").trim() &&
+        !String(row.part_no || "").trim()
+      );
+      if (index < 0) {
+        rows.push({});
+        index = rows.length - 1;
+      }
+      rows[index] = { ...rows[index], maker, model, part, part_no: partNo || partNumberForRow(maker, model, part) };
+      writeRows(rows);
+      sortRowsByMaker();
+      fitMobileSheet();
+      fitPrintRows();
+      updatePrimaryButtons();
+      showView("estimate");
     }
 
     function addCandidateFromList() {
@@ -1104,6 +1171,7 @@
     }
 
     function selectCandidateKey(key) {
+      candidateBackStack = [];
       activeCandidateKey = key;
       renderCandidateList();
     }
@@ -1296,6 +1364,7 @@
 
     function saveRecord() {
       if (!hasContent(collect())) return;
+      sortRowsByMaker();
       const records = readList(STORAGE_KEY);
       const data = collect();
       rememberData(data);
@@ -1576,6 +1645,7 @@
     });
 
     document.getElementById("candidateAddBtn").addEventListener("click", addCandidateFromList);
+    document.getElementById("candidateBackBtn").addEventListener("click", goCandidateBack);
     document.getElementById("candidateView").addEventListener("click", (event) => {
       const button = event.target.closest("[data-candidate-key]");
       if (!button) return;
@@ -1591,6 +1661,9 @@
       }
       if (button.dataset.action === "showPartsForMakerModel") {
         showPartsForMakerModel(button.dataset.maker, button.dataset.model);
+      }
+      if (button.dataset.action === "addCandidateToEstimate") {
+        addCandidateToEstimate(button.dataset.maker, button.dataset.model, button.dataset.value, button.dataset.partNo);
       }
       if (button.dataset.action === "askCandidateDelete") {
         askCandidateDelete(button.dataset.key, button.dataset.value);
