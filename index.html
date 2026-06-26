@@ -767,6 +767,10 @@
       return `${String(model || "").trim()}|||${String(part || "").trim()}`;
     }
 
+    function partNumberKey(maker, model, part) {
+      return `${String(maker || "").trim()}|||${String(model || "").trim()}|||${String(part || "").trim()}`;
+    }
+
     function makerModelKey(maker, model) {
       return `${String(maker || "").trim()}|||${String(model || "").trim()}`;
     }
@@ -892,10 +896,12 @@
     function rememberPartNumbers(data) {
       const map = readPartNumberMap();
       valuesToRows(data).forEach((row) => {
+        const maker = String(row.maker || "").trim();
         const model = String(row.model || "").trim();
         const part = String(row.part || "").trim();
         const partNo = String(row.part_no || "").trim();
         if (!model || !part || !partNo) return;
+        if (maker) map[partNumberKey(maker, model, part)] = partNo;
         map[partMapKey(model, part)] = partNo;
       });
       writePartNumberMap(map);
@@ -906,29 +912,62 @@
       return match ? Number(match[1]) : null;
     }
 
-    function fillPartNumberForPartInput(input) {
+    function rowContextFromKey(key) {
+      const index = rowIndexFromKey(key);
+      if (index === null) return { index: null, maker: "", model: "", part: "" };
+      return {
+        index,
+        maker: document.querySelector(`[data-key="items.${index}.maker"]`)?.value.trim() || "",
+        model: document.querySelector(`[data-key="items.${index}.model"]`)?.value.trim() || "",
+        part: document.querySelector(`[data-key="items.${index}.part"]`)?.value.trim() || "",
+      };
+    }
+
+    function filterSuggestions(list, typed) {
+      const query = String(typed || "").trim();
+      const unique = Array.from(new Set((list || []).filter(Boolean)));
+      if (!query) return unique.slice(0, 8);
+      return unique.filter((item) =>
+        item !== query && (item.includes(query) || readingFor(item).startsWith(query))
+      ).slice(0, 8);
+    }
+
+    function partNumberForRow(maker, model, part) {
+      const map = readPartNumberMap();
+      return map[partNumberKey(maker, model, part)] || map[partMapKey(model, part)] || "";
+    }
+
+    function fillPartNumberForPartInput(input, force = false) {
       if (!input || !/^items\.\d+\.part$/.test(input.dataset.key || "")) return;
-      const index = rowIndexFromKey(input.dataset.key);
+      const { index, maker, model } = rowContextFromKey(input.dataset.key);
       if (index === null) return;
-      const model = document.querySelector(`[data-key="items.${index}.model"]`)?.value;
       const part = input.value;
-      const partNo = readPartNumberMap()[partMapKey(model, part)];
+      const partNo = partNumberForRow(maker, model, part);
       if (!partNo) return;
       const partNoInput = document.querySelector(`[data-key="items.${index}.part_no"]`);
-      if (partNoInput && !partNoInput.value.trim()) {
+      if (partNoInput && (force || !partNoInput.value.trim())) {
         partNoInput.value = partNo;
         partNoInput.dispatchEvent(new Event("input", { bubbles: true }));
       }
     }
 
     function suggestionsFor(key, typed) {
-      const list = readHistory()[historyKey(key)] || [];
       if (!shouldUseHistory(key)) return [];
-      const query = String(typed || "").trim();
-      if (!query) return list.slice(0, 8);
-      return list.filter((item) =>
-        item !== query && (item.includes(query) || readingFor(item).startsWith(query))
-      ).slice(0, 8);
+      const normalizedKey = historyKey(key);
+      const history = readHistory()[normalizedKey] || [];
+      const { maker, model, part } = rowContextFromKey(key);
+      let scoped = [];
+      if (normalizedKey === "items.model" && maker) {
+        scoped = readMakerModelMap()[maker] || [];
+      }
+      if (normalizedKey === "items.part" && maker && model) {
+        scoped = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
+      }
+      if (normalizedKey === "items.part_no" && model && part) {
+        const partNo = partNumberForRow(maker, model, part);
+        scoped = partNo ? [partNo] : [];
+      }
+      return filterSuggestions([...scoped, ...history], typed);
     }
 
     function showSuggestions(input) {
@@ -960,7 +999,7 @@
       if (!input) return;
       input.value = button.dataset.suggest;
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      fillPartNumberForPartInput(input);
+      fillPartNumberForPartInput(input, true);
       hideSuggestions();
       input.focus();
     }
@@ -1017,8 +1056,37 @@
             ${models.map((model) => `
               <tr>
                 <td>${escapeHtml(maker)}</td>
-                <td>${escapeHtml(model)}</td>
+                <td><button type="button" data-action="showPartsForMakerModel" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}">${escapeHtml(model)}</button></td>
                 <td><button class="danger" type="button" data-action="askMakerModelDelete" data-maker="${escapeHtml(maker)}" data-value="${escapeHtml(model)}">削除</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    function showPartsForMakerModel(maker, model) {
+      const parts = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
+      activeCandidateKey = "items.part";
+      document.querySelectorAll("[data-candidate-key]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
+      });
+      document.getElementById("makerCandidateTabs").style.display = "flex";
+      const target = document.getElementById("candidateList");
+      if (!parts.length) {
+        target.innerHTML = `<div class="empty">${escapeHtml(maker)} / ${escapeHtml(model)} の部品候補はまだありません</div>`;
+        return;
+      }
+      target.innerHTML = `
+        <table class="record-table">
+          <thead><tr><th>メーカー</th><th>型式</th><th>部品名</th><th>部品番号</th><th>操作</th></tr></thead>
+          <tbody>
+            ${parts.map((part) => `
+              <tr>
+                <td>${escapeHtml(maker)}</td>
+                <td>${escapeHtml(model)}</td>
+                <td>${escapeHtml(part)}</td>
+                <td>${escapeHtml(partNumberForRow(maker, model, part))}</td>
+                <td><button class="danger" type="button" data-action="askMakerModelPartDelete" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}">削除</button></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1049,6 +1117,12 @@
       document.getElementById("candidateDeleteConfirm").hidden = false;
     }
 
+    function askMakerModelPartDelete(maker, model, part) {
+      pendingCandidateDelete = { type: "makerModelPart", key: "items.part", maker, model, value: part };
+      document.getElementById("candidateDeleteTitle").textContent = `「${maker}」の型式「${model}」の部品「${part}」を削除しますか？`;
+      document.getElementById("candidateDeleteConfirm").hidden = false;
+    }
+
     function closeCandidateDeleteConfirm() {
       document.getElementById("candidateDeleteConfirm").hidden = true;
       pendingCandidateDelete = null;
@@ -1057,6 +1131,8 @@
     function confirmCandidateDelete() {
       if (pendingCandidateDelete?.type === "makerModel") {
         deleteMakerModel(pendingCandidateDelete.maker, pendingCandidateDelete.value);
+      } else if (pendingCandidateDelete?.type === "makerModelPart") {
+        deleteMakerModelPart(pendingCandidateDelete.maker, pendingCandidateDelete.model, pendingCandidateDelete.value);
       } else if (pendingCandidateDelete) {
         const trash = readList(CANDIDATE_TRASH_KEY);
         trash.unshift({
@@ -1084,6 +1160,22 @@
       });
       writeList(CANDIDATE_TRASH_KEY, trash);
       showModelsForMaker(maker);
+    }
+
+    function deleteMakerModelPart(maker, model, part) {
+      const map = readMakerModelPartMap();
+      const key = makerModelKey(maker, model);
+      map[key] = (map[key] || []).filter((item) => item !== part);
+      writeMakerModelPartMap(map);
+      const trash = readList(CANDIDATE_TRASH_KEY);
+      trash.unshift({
+        key: "items.part",
+        value: part,
+        label: `部品名（${maker} / ${model}）`,
+        deletedAt: nowText(),
+      });
+      writeList(CANDIDATE_TRASH_KEY, trash);
+      showPartsForMakerModel(maker, model);
     }
 
     function moveCaretToEnd(input) {
@@ -1465,11 +1557,17 @@
       if (button.dataset.action === "showMakerModels") {
         showModelsForMaker(button.dataset.maker);
       }
+      if (button.dataset.action === "showPartsForMakerModel") {
+        showPartsForMakerModel(button.dataset.maker, button.dataset.model);
+      }
       if (button.dataset.action === "askCandidateDelete") {
         askCandidateDelete(button.dataset.key, button.dataset.value);
       }
       if (button.dataset.action === "askMakerModelDelete") {
         askMakerModelDelete(button.dataset.maker, button.dataset.value);
+      }
+      if (button.dataset.action === "askMakerModelPartDelete") {
+        askMakerModelPartDelete(button.dataset.maker, button.dataset.model, button.dataset.value);
       }
     });
 
