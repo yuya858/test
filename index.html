@@ -868,6 +868,7 @@
       });
       rememberPartNumbers(data);
       rememberMakerModels(data);
+      renderCandidateList();
     }
 
     function rememberMakerModels(data) {
@@ -1037,8 +1038,14 @@
     }
 
     function askCandidateDelete(key, value) {
-      pendingCandidateDelete = { key, value };
+      pendingCandidateDelete = { type: "history", key, value };
       document.getElementById("candidateDeleteTitle").textContent = `「${value}」を削除しますか？`;
+      document.getElementById("candidateDeleteConfirm").hidden = false;
+    }
+
+    function askMakerModelDelete(maker, model) {
+      pendingCandidateDelete = { type: "makerModel", key: "items.model", maker, value: model };
+      document.getElementById("candidateDeleteTitle").textContent = `「${maker}」の型式「${model}」を削除しますか？`;
       document.getElementById("candidateDeleteConfirm").hidden = false;
     }
 
@@ -1048,7 +1055,9 @@
     }
 
     function confirmCandidateDelete() {
-      if (pendingCandidateDelete) {
+      if (pendingCandidateDelete?.type === "makerModel") {
+        deleteMakerModel(pendingCandidateDelete.maker, pendingCandidateDelete.value);
+      } else if (pendingCandidateDelete) {
         const trash = readList(CANDIDATE_TRASH_KEY);
         trash.unshift({
           ...pendingCandidateDelete,
@@ -1453,8 +1462,14 @@
     document.getElementById("candidateList").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-action]");
       if (!button) return;
+      if (button.dataset.action === "showMakerModels") {
+        showModelsForMaker(button.dataset.maker);
+      }
       if (button.dataset.action === "askCandidateDelete") {
         askCandidateDelete(button.dataset.key, button.dataset.value);
+      }
+      if (button.dataset.action === "askMakerModelDelete") {
+        askMakerModelDelete(button.dataset.maker, button.dataset.value);
       }
     });
 
