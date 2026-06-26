@@ -477,6 +477,7 @@
     <button id="undoBtn" type="button" disabled>一つ前へ戻る</button>
     <button id="printBtn" type="button">印刷</button>
     <button id="addRowBtn" type="button">行追加</button>
+    <button id="insertRowBtn" type="button">改行</button>
     <button id="removeRowBtn" type="button">行削除</button>
     <button id="clearBtn" type="button">クリア</button>
   </div>
@@ -681,6 +682,14 @@
       </div>
     </div>
   </div>
+  <div class="confirm-backdrop" id="makerMissingConfirm" hidden>
+    <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="makerMissingTitle">
+      <p id="makerMissingTitle">設置場所にメーカーが書かれていません</p>
+      <div class="confirm-actions">
+        <button id="makerMissingOkBtn" type="button">OK</button>
+      </div>
+    </div>
+  </div>
   <script>
     const STORAGE_KEY = "mitsumori_irai_records_v2";
     const DRAFT_KEY = "mitsumori_irai_drafts_v2";
@@ -757,44 +766,80 @@
       });
     }
 
-    function sortRowsByMaker() {
-      const rows = rowsWithEffectiveContext(valuesToRows(collect()));
-      const filled = rows.filter(rowHasContent);
-      const emptyCount = rows.length - filled.length;
-      const placeOrder = [];
-      filled.forEach((row) => {
-        const place = String(row.effectivePlace || row.place || "").trim();
-        if (place && !placeOrder.includes(place)) placeOrder.push(place);
-      });
-      const placeRows = placeOrder.flatMap((place) => {
-        const group = filled.filter((row) => String(row.effectivePlace || row.place || "").trim() === place);
+    function formatRowsForDisplay(rows) {
+      const formatted = [];
+      const formatSegment = (segment) => {
+        const contextRows = rowsWithEffectiveContext(segment);
+        const filled = contextRows.filter(rowHasContent);
+        const emptyCount = segment.length - filled.length;
         const makerOrder = [];
-        group.forEach((row) => {
+        filled.forEach((row) => {
           const maker = String(row.effectiveMaker || row.maker || "").trim();
           if (maker && !makerOrder.includes(maker)) makerOrder.push(maker);
         });
         const makerRows = makerOrder.flatMap((maker) =>
-          group.filter((row) => String(row.effectiveMaker || row.maker || "").trim() === maker)
+          filled.filter((row) => String(row.effectiveMaker || row.maker || "").trim() === maker)
         );
-        const noMakerRows = group.filter((row) => !String(row.effectiveMaker || row.maker || "").trim());
-        return [...makerRows, ...noMakerRows];
-      });
-      const noPlaceRows = filled.filter((row) =>
-        !String(row.effectivePlace || row.place || "").trim()
+        const noMakerRows = filled.filter((row) => !String(row.effectiveMaker || row.maker || "").trim());
+        let previousMaker = "";
+        return [...makerRows, ...noMakerRows].map((row) => {
+          const maker = String(row.effectiveMaker || row.maker || "").trim();
+          const displayMaker = maker && maker === previousMaker ? "" : maker;
+          if (maker) previousMaker = maker;
+          const { effectivePlace, effectiveMaker, ...cleanRow } = row;
+          return { ...cleanRow, maker: displayMaker };
+        }).concat(Array.from({ length: emptyCount }, () => ({})));
+      };
+
+      let start = 0;
+      for (let i = 1; i < rows.length; i += 1) {
+        if (String(rows[i].place || "").trim()) {
+          formatted.push(...formatSegment(rows.slice(start, i)));
+          start = i;
+        }
+      }
+      formatted.push(...formatSegment(rows.slice(start)));
+      return formatted;
+    }
+
+    function sortRowsByMaker() {
+      writeRows(formatRowsForDisplay(valuesToRows(collect())));
+    }
+
+    function insertBlankRowAt(index) {
+      const rows = valuesToRows(collect());
+      const lastContentIndex = rows.reduce((last, row, rowIndex) => rowHasContent(row) ? rowIndex : last, -1);
+      if (lastContentIndex >= rows.length - 1) rows.push({});
+      rows.splice(index, 0, {});
+      writeRows(rows.slice(0, Math.max(14, rows.length - 1)));
+    }
+
+    function activeRowIndex() {
+      if (activeInput?.dataset?.key) {
+        const index = rowIndexFromKey(activeInput.dataset.key);
+        if (index !== null) return index;
+      }
+      return 0;
+    }
+
+    function firstMissingMakerPlace() {
+      const rows = valuesToRows(collect());
+      const row = rows.find((item) =>
+        String(item.place || "").trim() &&
+        rowHasContent(item) &&
+        !String(item.maker || "").trim()
       );
-      let previousPlace = "";
-      let previousMaker = "";
-      const displayRows = [...placeRows, ...noPlaceRows].map((row) => {
-        const place = String(row.effectivePlace || row.place || "").trim();
-        const maker = String(row.effectiveMaker || row.maker || "").trim();
-        const samePlace = place && place === previousPlace;
-        const displayMaker = maker && samePlace && maker === previousMaker ? "" : maker;
-        if (place) previousPlace = place;
-        if (maker) previousMaker = maker;
-        const { effectivePlace, effectiveMaker, ...cleanRow } = row;
-        return { ...cleanRow, maker: displayMaker };
-      });
-      writeRows([...displayRows, ...Array.from({ length: emptyCount }, () => ({}))]);
+      return row ? String(row.place || "").trim() : "";
+    }
+
+    function showMakerMissing(place) {
+      document.getElementById("makerMissingTitle").textContent =
+        `設置場所「${place}」にメーカーが書かれていません`;
+      document.getElementById("makerMissingConfirm").hidden = false;
+    }
+
+    function closeMakerMissing() {
+      document.getElementById("makerMissingConfirm").hidden = true;
     }
 
     function fields() {
@@ -1216,19 +1261,14 @@
     function addCandidateToEstimate(maker, model, part, partNo) {
       rememberUndoState();
       const rows = valuesToRows(collect());
-      let index = rows.findIndex((row) =>
-        !String(row.maker || "").trim() &&
-        !String(row.model || "").trim() &&
-        !String(row.part || "").trim() &&
-        !String(row.part_no || "").trim()
-      );
-      if (index < 0) {
+      const lastContentIndex = rows.reduce((last, row, rowIndex) => rowHasContent(row) ? rowIndex : last, -1);
+      let index = lastContentIndex + 1;
+      if (index >= rows.length) {
         rows.push({});
         index = rows.length - 1;
       }
       rows[index] = { ...rows[index], maker, model, part, part_no: partNo || partNumberForRow(maker, model, part) };
       writeRows(rows);
-      sortRowsByMaker();
       fitMobileSheet();
       fitPrintRows();
       updatePrimaryButtons();
@@ -1471,6 +1511,11 @@
 
     function saveRecord() {
       if (!hasContent(collect())) return;
+      const missingPlace = firstMissingMakerPlace();
+      if (missingPlace) {
+        showMakerMissing(missingPlace);
+        return;
+      }
       rememberUndoState();
       sortRowsByMaker();
       const records = readList(STORAGE_KEY);
@@ -1723,6 +1768,13 @@
       fitPrintRows();
       updatePrimaryButtons();
     });
+    document.getElementById("insertRowBtn").addEventListener("click", () => {
+      rememberUndoState();
+      insertBlankRowAt(activeRowIndex());
+      fitMobileSheet();
+      fitPrintRows();
+      updatePrimaryButtons();
+    });
     document.getElementById("removeRowBtn").addEventListener("click", () => {
       rememberUndoState();
       deleteRow();
@@ -1731,6 +1783,7 @@
       openClearConfirm();
     });
     document.getElementById("clearNoBtn").addEventListener("click", closeClearConfirm);
+    document.getElementById("makerMissingOkBtn").addEventListener("click", closeMakerMissing);
     document.getElementById("clearYesBtn").addEventListener("click", () => {
       rememberUndoState();
       fields().forEach((el) => { el.value = ""; });
