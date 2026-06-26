@@ -603,6 +603,10 @@
     <section class="view" id="savedView" hidden>
       <div class="list-panel">
         <h2>保存した見積もり</h2>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+          <input id="savedSearchInput" style="min-height:36px; padding:0 8px; min-width:260px; flex:1;" placeholder="ユーザー名・会社名・物件名などで検索">
+          <button id="savedSearchClearBtn" type="button">検索クリア</button>
+        </div>
         <div id="savedList"></div>
       </div>
     </section>
@@ -1510,13 +1514,33 @@
       document.getElementById("clearConfirm").hidden = true;
     }
 
+    function recordMatchesSearch(record, query) {
+      const text = String(query || "").trim();
+      if (!text) return true;
+      const values = [
+        record.company,
+        record.title,
+        record.updatedAt,
+        ...Object.values(record.data || {}),
+      ].map((value) => String(value || ""));
+      return values.some((value) => value.includes(text) || readingFor(value).includes(text));
+    }
+
     function renderRecordList(kind) {
       const isTrash = kind === "trash";
       const isDraft = kind === "draft";
       const target = document.getElementById(isTrash ? "trashList" : isDraft ? "draftList" : "savedList");
-      const list = readList(isTrash ? TRASH_KEY : isDraft ? DRAFT_KEY : STORAGE_KEY);
+      let list = readList(isTrash ? TRASH_KEY : isDraft ? DRAFT_KEY : STORAGE_KEY);
+      if (!isTrash && !isDraft) {
+        list = list.filter((record) =>
+          recordMatchesSearch(record, document.getElementById("savedSearchInput").value)
+        );
+      }
       if (!list.length) {
-        target.innerHTML = isTrash ? renderCandidateTrashHtml(true) : `<div class="empty">${isDraft ? "未保存の見積もりはありません" : "保存した見積もりはありません"}</div>`;
+        const searchText = document.getElementById("savedSearchInput")?.value.trim();
+        target.innerHTML = isTrash
+          ? renderCandidateTrashHtml(true)
+          : `<div class="empty">${isDraft ? "未保存の見積もりはありません" : searchText ? "検索結果はありません" : "保存した見積もりはありません"}</div>`;
         return;
       }
       target.innerHTML = `
@@ -1578,6 +1602,11 @@
     document.getElementById("saveBtn").addEventListener("click", saveRecord);
     document.getElementById("newBtn").addEventListener("click", newRecord);
     document.getElementById("printBtn").addEventListener("click", () => window.print());
+    document.getElementById("savedSearchInput").addEventListener("input", () => renderRecordList("saved"));
+    document.getElementById("savedSearchClearBtn").addEventListener("click", () => {
+      document.getElementById("savedSearchInput").value = "";
+      renderRecordList("saved");
+    });
     document.getElementById("addRowBtn").addEventListener("click", () => {
       const data = collect();
       renderRows(itemRows.children.length + 1);
