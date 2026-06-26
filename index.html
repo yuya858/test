@@ -730,20 +730,37 @@
       return columns.some((name) => String(row[name] || "").trim());
     }
 
+    function rowsWithEffectiveMaker(rows) {
+      let currentMaker = "";
+      return rows.map((row) => {
+        const maker = String(row.maker || "").trim();
+        if (maker) currentMaker = maker;
+        return { ...row, effectiveMaker: maker || currentMaker };
+      });
+    }
+
     function sortRowsByMaker() {
-      const rows = valuesToRows(collect());
+      const rows = rowsWithEffectiveMaker(valuesToRows(collect()));
       const filled = rows.filter(rowHasContent);
       const emptyCount = rows.length - filled.length;
       const makerOrder = [];
       filled.forEach((row) => {
-        const maker = String(row.maker || "").trim();
+        const maker = String(row.effectiveMaker || row.maker || "").trim();
         if (maker && !makerOrder.includes(maker)) makerOrder.push(maker);
       });
       const makerRows = makerOrder.flatMap((maker) =>
-        filled.filter((row) => String(row.maker || "").trim() === maker)
+        filled.filter((row) => String(row.effectiveMaker || row.maker || "").trim() === maker)
       );
-      const noMakerRows = filled.filter((row) => !String(row.maker || "").trim());
-      writeRows([...makerRows, ...noMakerRows, ...Array.from({ length: emptyCount }, () => ({}))]);
+      const noMakerRows = filled.filter((row) => !String(row.effectiveMaker || row.maker || "").trim());
+      let previousMaker = "";
+      const displayRows = [...makerRows, ...noMakerRows].map((row) => {
+        const maker = String(row.effectiveMaker || row.maker || "").trim();
+        const displayMaker = maker && maker === previousMaker ? "" : maker;
+        if (maker) previousMaker = maker;
+        const { effectiveMaker, ...cleanRow } = row;
+        return { ...cleanRow, maker: displayMaker };
+      });
+      writeRows([...displayRows, ...Array.from({ length: emptyCount }, () => ({}))]);
     }
 
     function fields() {
@@ -910,8 +927,8 @@
     function rememberMakerModels(data) {
       const map = readMakerModelMap();
       const partMap = readMakerModelPartMap();
-      valuesToRows(data).forEach((row) => {
-        const maker = String(row.maker || "").trim();
+      rowsWithEffectiveMaker(valuesToRows(data)).forEach((row) => {
+        const maker = String(row.effectiveMaker || row.maker || "").trim();
         const model = String(row.model || "").trim();
         const part = String(row.part || "").trim();
         if (!maker || !model) return;
@@ -927,8 +944,8 @@
 
     function rememberPartNumbers(data) {
       const map = readPartNumberMap();
-      valuesToRows(data).forEach((row) => {
-        const maker = String(row.maker || "").trim();
+      rowsWithEffectiveMaker(valuesToRows(data)).forEach((row) => {
+        const maker = String(row.effectiveMaker || row.maker || "").trim();
         const model = String(row.model || "").trim();
         const part = String(row.part || "").trim();
         const partNo = String(row.part_no || "").trim();
@@ -947,9 +964,16 @@
     function rowContextFromKey(key) {
       const index = rowIndexFromKey(key);
       if (index === null) return { index: null, maker: "", model: "", part: "" };
+      let maker = document.querySelector(`[data-key="items.${index}.maker"]`)?.value.trim() || "";
+      if (!maker) {
+        for (let i = index - 1; i >= 0; i -= 1) {
+          maker = document.querySelector(`[data-key="items.${i}.maker"]`)?.value.trim() || "";
+          if (maker) break;
+        }
+      }
       return {
         index,
-        maker: document.querySelector(`[data-key="items.${index}.maker"]`)?.value.trim() || "",
+        maker,
         model: document.querySelector(`[data-key="items.${index}.model"]`)?.value.trim() || "",
         part: document.querySelector(`[data-key="items.${index}.part"]`)?.value.trim() || "",
       };
