@@ -130,6 +130,26 @@
       flex-wrap: wrap;
     }
 
+    .candidate-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .candidate-title h2 {
+      margin: 0;
+    }
+
+    .candidate-context {
+      margin-left: auto;
+      color: #374151;
+      font-size: 14px;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
     .empty {
       padding: 24px 8px;
       color: #6b7280;
@@ -296,7 +316,7 @@
     }
 
     .repair-box {
-      grid-template-columns: 96px 1fr 70px 180px;
+      grid-template-columns: 84px 1fr 60px 220px;
       gap: 8px;
     }
 
@@ -440,6 +460,17 @@
         padding: 10px;
       }
 
+      .candidate-title {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .candidate-context {
+        margin-left: 0;
+        text-align: left;
+        width: 100%;
+      }
+
       #candidateView .record-table {
         border-collapse: separate;
         border-spacing: 0 8px;
@@ -488,33 +519,44 @@
     }
 
     @media print {
-      @page { size: A4 landscape; margin: 0; }
+      @page { size: A4 landscape; margin: 5mm; }
       html, body {
-        width: 297mm;
-        height: 210mm;
+        width: 287mm;
+        height: 200mm;
         margin: 0;
         background: #fff;
         overflow: hidden;
       }
       .toolbar, .list-panel, .confirm-backdrop, .suggest-box { display: none; }
       .wrap {
-        width: 297mm;
-        height: 210mm;
-        padding: 4mm;
+        width: 287mm;
+        height: 200mm;
+        padding: 0;
         overflow: hidden;
       }
       .view[hidden] { display: block; }
       #savedView, #draftView, #candidateView, #trashView { display: none; }
+      #estimateView {
+        width: 287mm;
+        height: 200mm;
+        overflow: hidden;
+        page-break-after: avoid;
+        page-break-inside: avoid;
+        break-after: avoid;
+        break-inside: avoid;
+      }
       .sheet {
-        width: 289mm;
-        height: 202mm;
+        width: 282mm;
+        height: 195mm;
         min-height: 0;
         box-shadow: none;
         padding: 0;
-        margin: 0;
+        margin: 0 auto;
         transform: none !important;
         page-break-after: avoid;
         page-break-inside: avoid;
+        break-after: avoid;
+        break-inside: avoid;
       }
       body { font-size: var(--print-font-size, 11px); }
       .header { margin-bottom: 10px; }
@@ -694,7 +736,10 @@
 
     <section class="view" id="candidateView" hidden>
       <div class="list-panel">
-        <h2>候補一覧</h2>
+        <div class="candidate-title">
+          <h2>候補一覧</h2>
+          <div id="candidateContext" class="candidate-context"></div>
+        </div>
         <div id="candidateTabs" style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
           <button class="active" type="button" data-candidate-key="user_name">ユーザー名</button>
           <button type="button" data-candidate-key="property_name">物件名</button>
@@ -1380,6 +1425,18 @@
       }
     }
 
+    function updateCandidateContext() {
+      const target = document.getElementById("candidateContext");
+      if (!target) return;
+      if (activeCandidateMaker && activeCandidateModel) {
+        target.textContent = `メーカー：${activeCandidateMaker}　型式：${activeCandidateModel}`;
+      } else if (activeCandidateMaker) {
+        target.textContent = `メーカー：${activeCandidateMaker}`;
+      } else {
+        target.textContent = "";
+      }
+    }
+
     function renderCandidateList() {
       const target = document.getElementById("candidateList");
       const history = readHistory();
@@ -1393,6 +1450,7 @@
       document.getElementById("makerCandidateTabs").style.display = "none";
       activeCandidateMaker = "";
       activeCandidateModel = "";
+      updateCandidateContext();
       updateCandidateBackButton();
       if (!rows.length) {
         target.innerHTML = `<div class="empty">${candidateLabel(activeCandidateKey)}の候補はまだありません</div>`;
@@ -1434,6 +1492,7 @@
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
+      updateCandidateContext();
       updateCandidateBackButton();
       const target = document.getElementById("candidateList");
       if (!models.length) {
@@ -1470,6 +1529,7 @@
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
+      updateCandidateContext();
       updateCandidateBackButton();
       const target = document.getElementById("candidateList");
       if (!parts.length) {
@@ -1478,12 +1538,10 @@
       }
       target.innerHTML = `
         <table class="record-table">
-          <thead><tr><th>メーカー</th><th>型式</th><th>部品名</th><th>部品番号</th><th>操作</th></tr></thead>
+          <thead><tr><th>部品名</th><th>部品番号</th><th>操作</th></tr></thead>
           <tbody>
             ${parts.map((part) => `
               <tr>
-                <td data-label="メーカー">${escapeHtml(maker)}</td>
-                <td data-label="型式">${escapeHtml(model)}</td>
                 <td data-label="部品名">${escapeHtml(part)}</td>
                 <td data-label="部品番号">${escapeHtml(partNumberForRow(maker, model, part))}</td>
                 <td data-label="操作"><div class="candidate-actions">
