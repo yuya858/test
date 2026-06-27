@@ -150,6 +150,38 @@
       overflow-wrap: anywhere;
     }
 
+    .part-choice {
+      width: 100%;
+      min-height: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 500;
+      padding: 0;
+    }
+
+    .part-choice .part-number {
+      color: #475569;
+      white-space: nowrap;
+    }
+
+    .part-choice-row.selected td {
+      background: #e8f1ff;
+      box-shadow: inset 0 0 0 2px #2563eb;
+    }
+
+    .part-choice-table th:last-child,
+    .part-choice-table td:last-child {
+      width: auto;
+      text-align: left;
+    }
+
     .empty {
       padding: 24px 8px;
       color: #6b7280;
@@ -546,30 +578,31 @@
         break-inside: avoid;
       }
       .sheet {
-        width: 282mm;
-        height: 195mm;
+        width: 276mm;
+        height: 188mm;
         min-height: 0;
         box-shadow: none;
         padding: 0;
         margin: 0 auto;
+        overflow: hidden;
         transform: none !important;
         page-break-after: avoid;
         page-break-inside: avoid;
         break-after: avoid;
         break-inside: avoid;
       }
-      body { font-size: var(--print-font-size, 11px); }
-      .header { margin-bottom: 10px; }
-      h1 { font-size: 20px; }
+      body { font-size: var(--print-font-size, 10.5px); }
+      .header { margin-bottom: 6px; }
+      h1 { font-size: 19px; }
       .company { font-size: 14px; }
-      td, th { height: 25px; }
-      .top td { height: 25px; }
+      td, th { height: 23px; }
+      .top td { height: 23px; }
       .top td.property-cell,
-      .top td.repair-cell { height: 36px; }
-      .items th { height: var(--print-item-header-height, 24px); font-size: 10px; }
-      .items td { height: var(--print-item-row-height, 27px); }
-      .notes { height: var(--print-notes-height, 85px); }
-      .notes-box { grid-template-rows: 22px 1fr 24px; }
+      .top td.repair-cell { height: 32px; }
+      .items th { height: var(--print-item-header-height, 22px); font-size: 9.5px; }
+      .items td { height: var(--print-item-row-height, 24px); }
+      .notes { height: var(--print-notes-height, 68px); }
+      .notes-box { grid-template-rows: 19px 1fr 22px; }
       .sama-field { font-size: 17px; }
       .label { font-size: 10px; }
       .entry { font-size: inherit; }
@@ -749,11 +782,14 @@
         <div id="makerCandidateTabs" hidden></div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
           <input id="candidateText" style="min-height:36px; padding:0 8px; min-width:220px;" placeholder="候補に追加する文字">
-          <button id="candidateAddBtn" type="button">候補追加</button>
+          <button id="candidateAddBtn" type="button" disabled>候補追加</button>
+          <button id="candidateBulkAddBtn" type="button" disabled>見積追加</button>
+          <button id="candidateEditSelectedBtn" type="button" disabled>編集</button>
+          <button class="danger" id="candidateDeleteSelectedBtn" type="button" disabled>削除</button>
         </div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
           <input id="candidateSearchInput" style="min-height:36px; padding:0 8px; min-width:220px; flex:1;" placeholder="候補を検索">
-          <button id="candidateSearchClearBtn" type="button">検索クリア</button>
+          <button id="candidateSearchClearBtn" type="button" disabled>検索クリア</button>
         </div>
         <div id="candidateList"></div>
       </div>
@@ -845,6 +881,8 @@
     let activeCandidateKey = "user_name";
     let activeCandidateMaker = "";
     let activeCandidateModel = "";
+    let selectedCandidateParts = new Set();
+    let candidateBulkAddConfirm = false;
     let candidateBackStack = [];
     let undoStack = [];
     let lastUndoSnapshot = "";
@@ -1437,6 +1475,27 @@
       }
     }
 
+    function updateCandidateActionButtons() {
+      const candidateText = document.getElementById("candidateText");
+      const searchInput = document.getElementById("candidateSearchInput");
+      const addBtn = document.getElementById("candidateAddBtn");
+      const clearBtn = document.getElementById("candidateSearchClearBtn");
+      const bulkAddBtn = document.getElementById("candidateBulkAddBtn");
+      const editBtn = document.getElementById("candidateEditSelectedBtn");
+      const deleteBtn = document.getElementById("candidateDeleteSelectedBtn");
+      const selectedCount = selectedCandidateParts.size;
+      if (addBtn) addBtn.disabled = !String(candidateText?.value || "").trim();
+      if (clearBtn) clearBtn.disabled = !String(searchInput?.value || "").trim();
+      const canBulkAdd = Boolean(activeCandidateMaker && activeCandidateModel && selectedCount > 0);
+      if (!canBulkAdd) candidateBulkAddConfirm = false;
+      if (bulkAddBtn) {
+        bulkAddBtn.disabled = !canBulkAdd;
+        bulkAddBtn.textContent = candidateBulkAddConfirm ? "✓" : "見積追加";
+      }
+      if (editBtn) editBtn.disabled = !(activeCandidateMaker && activeCandidateModel && selectedCount === 1);
+      if (deleteBtn) deleteBtn.disabled = !(activeCandidateMaker && activeCandidateModel && selectedCount > 0);
+    }
+
     function renderCandidateList() {
       const target = document.getElementById("candidateList");
       const history = readHistory();
@@ -1450,7 +1509,10 @@
       document.getElementById("makerCandidateTabs").style.display = "none";
       activeCandidateMaker = "";
       activeCandidateModel = "";
+      selectedCandidateParts.clear();
+      candidateBulkAddConfirm = false;
       updateCandidateContext();
+      updateCandidateActionButtons();
       updateCandidateBackButton();
       if (!rows.length) {
         target.innerHTML = `<div class="empty">${candidateLabel(activeCandidateKey)}の候補はまだありません</div>`;
@@ -1484,6 +1546,8 @@
       if (rememberBack) candidateBackStack.push({ type: "list", key: activeCandidateKey });
       activeCandidateMaker = maker;
       activeCandidateModel = "";
+      selectedCandidateParts.clear();
+      candidateBulkAddConfirm = false;
       const models = (readMakerModelMap()[maker] || []).filter((model) =>
         matchesCandidateSearch([maker, model])
       );
@@ -1493,6 +1557,7 @@
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
       updateCandidateContext();
+      updateCandidateActionButtons();
       updateCandidateBackButton();
       const target = document.getElementById("candidateList");
       if (!models.length) {
@@ -1521,6 +1586,8 @@
       if (rememberBack) candidateBackStack.push({ type: "models", maker });
       activeCandidateMaker = maker;
       activeCandidateModel = model;
+      selectedCandidateParts.clear();
+      candidateBulkAddConfirm = false;
       const parts = (readMakerModelPartMap()[makerModelKey(maker, model)] || []).filter((part) =>
         matchesCandidateSearch([maker, model, part, partNumberForRow(maker, model, part)])
       );
@@ -1530,6 +1597,7 @@
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
       updateCandidateContext();
+      updateCandidateActionButtons();
       updateCandidateBackButton();
       const target = document.getElementById("candidateList");
       if (!parts.length) {
@@ -1537,22 +1605,22 @@
         return;
       }
       target.innerHTML = `
-        <table class="record-table">
-          <thead><tr><th>部品名</th><th>部品番号</th><th>操作</th></tr></thead>
+        <table class="record-table part-choice-table">
+          <thead><tr><th>部品候補</th></tr></thead>
           <tbody>
             ${parts.map((part) => `
-              <tr>
-                <td data-label="部品名">${escapeHtml(part)}</td>
-                <td data-label="部品番号">${escapeHtml(partNumberForRow(maker, model, part))}</td>
-                <td data-label="操作"><div class="candidate-actions">
-                  <button type="button" data-action="addCandidateToEstimate" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}" data-part-no="${escapeHtml(partNumberForRow(maker, model, part))}">見積もりに追加</button>
-                  <button type="button" data-action="editMakerModelPart" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}">編集</button>
-                  <button class="danger" type="button" data-action="askMakerModelPartDelete" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}">削除</button>
-                </div></td>
+              <tr class="part-choice-row${selectedCandidateParts.has(part) ? " selected" : ""}">
+                <td data-label="部品候補">
+                  <button class="part-choice" type="button" data-action="toggleCandidatePart" data-value="${escapeHtml(part)}" data-part-no="${escapeHtml(partNumberForRow(maker, model, part))}">
+                    <span>${escapeHtml(part)}</span>
+                    <span class="part-number">${escapeHtml(partNumberForRow(maker, model, part))}</span>
+                  </button>
+                </td>
               </tr>
             `).join("")}
           </tbody>
         </table>`;
+      updateCandidateActionButtons();
     }
 
     function goCandidateBack() {
@@ -1568,15 +1636,32 @@
     }
 
     function addCandidateToEstimate(maker, model, part, partNo) {
+      addCandidatePartsToEstimate(maker, model, [{ part, partNo }]);
+    }
+
+    function addCandidatePartsToEstimate(maker, model, parts) {
+      const selectedParts = parts
+        .map((item) => ({
+          part: String(item.part || "").trim(),
+          partNo: String(item.partNo || "").trim(),
+        }))
+        .filter((item) => item.part);
+      if (!selectedParts.length) return;
       rememberUndoState();
       const rows = valuesToRows(collect());
       const lastContentIndex = rows.reduce((last, row, rowIndex) => rowHasContent(row) ? rowIndex : last, -1);
       let index = lastContentIndex + 1;
-      if (index >= rows.length) {
-        rows.push({});
-        index = rows.length - 1;
-      }
-      rows[index] = { ...rows[index], maker, model, part, part_no: partNo || partNumberForRow(maker, model, part) };
+      selectedParts.forEach((item) => {
+        if (index >= rows.length) rows.push({});
+        rows[index] = {
+          ...rows[index],
+          maker,
+          model,
+          part: item.part,
+          part_no: item.partNo || partNumberForRow(maker, model, item.part),
+        };
+        index += 1;
+      });
       writeRows(rows);
       fitMobileSheet();
       fitPrintRows();
@@ -1584,10 +1669,69 @@
       showView("estimate");
     }
 
+    function selectedPartItems() {
+      if (!activeCandidateMaker || !activeCandidateModel) return [];
+      return Array.from(selectedCandidateParts).map((part) => ({
+        part,
+        partNo: partNumberForRow(activeCandidateMaker, activeCandidateModel, part),
+      }));
+    }
+
+    function toggleCandidatePart(button) {
+      const part = String(button?.dataset.value || "").trim();
+      if (!part) return;
+      const row = button.closest("tr");
+      if (selectedCandidateParts.has(part)) {
+        selectedCandidateParts.delete(part);
+        row?.classList.remove("selected");
+      } else {
+        selectedCandidateParts.add(part);
+        row?.classList.add("selected");
+      }
+      candidateBulkAddConfirm = false;
+      updateCandidateActionButtons();
+    }
+
+    function addSelectedCandidateParts() {
+      if (!candidateBulkAddConfirm) {
+        candidateBulkAddConfirm = true;
+        updateCandidateActionButtons();
+        return;
+      }
+      addCandidatePartsToEstimate(activeCandidateMaker, activeCandidateModel, selectedPartItems());
+    }
+
+    function editSelectedCandidatePart() {
+      const [part] = Array.from(selectedCandidateParts);
+      if (!part) return;
+      editMakerModelPart(activeCandidateMaker, activeCandidateModel, part);
+    }
+
+    function askSelectedCandidatePartsDelete() {
+      const values = Array.from(selectedCandidateParts);
+      if (!values.length) return;
+      candidateBulkAddConfirm = false;
+      updateCandidateActionButtons();
+      if (values.length === 1) {
+        askMakerModelPartDelete(activeCandidateMaker, activeCandidateModel, values[0]);
+        return;
+      }
+      pendingCandidateDelete = {
+        type: "makerModelParts",
+        key: "items.part",
+        maker: activeCandidateMaker,
+        model: activeCandidateModel,
+        values,
+      };
+      document.getElementById("candidateDeleteTitle").textContent = `選択した${values.length}件の候補を削除しますか？`;
+      document.getElementById("candidateDeleteConfirm").hidden = false;
+    }
+
     function addCandidateFromList() {
       const value = document.getElementById("candidateText").value;
       rememberValue(activeCandidateKey, value);
       document.getElementById("candidateText").value = "";
+      updateCandidateActionButtons();
       renderCandidateList();
     }
 
@@ -1660,6 +1804,8 @@
       candidateBackStack = [];
       activeCandidateMaker = "";
       activeCandidateModel = "";
+      selectedCandidateParts.clear();
+      candidateBulkAddConfirm = false;
       activeCandidateKey = key;
       renderCandidateList();
     }
@@ -1692,6 +1838,8 @@
         deleteMakerModel(pendingCandidateDelete.maker, pendingCandidateDelete.value);
       } else if (pendingCandidateDelete?.type === "makerModelPart") {
         deleteMakerModelPart(pendingCandidateDelete.maker, pendingCandidateDelete.model, pendingCandidateDelete.value);
+      } else if (pendingCandidateDelete?.type === "makerModelParts") {
+        deleteMakerModelParts(pendingCandidateDelete.maker, pendingCandidateDelete.model, pendingCandidateDelete.values);
       } else if (pendingCandidateDelete) {
         const trash = readList(CANDIDATE_TRASH_KEY);
         trash.unshift({
@@ -1739,6 +1887,31 @@
         deletedAt: nowText(),
       });
       writeList(CANDIDATE_TRASH_KEY, trash);
+      showPartsForMakerModel(maker, model);
+    }
+
+    function deleteMakerModelParts(maker, model, parts) {
+      const values = (parts || []).map((part) => String(part || "").trim()).filter(Boolean);
+      if (!values.length) return;
+      const map = readMakerModelPartMap();
+      const key = makerModelKey(maker, model);
+      const valueSet = new Set(values);
+      map[key] = (map[key] || []).filter((item) => !valueSet.has(item));
+      writeMakerModelPartMap(map);
+      const trash = readList(CANDIDATE_TRASH_KEY);
+      values.forEach((part) => {
+        trash.unshift({
+          type: "makerModelPart",
+          maker,
+          model,
+          key: "items.part",
+          value: part,
+          label: `部品名（${maker} / ${model}）`,
+          deletedAt: nowText(),
+        });
+      });
+      writeList(CANDIDATE_TRASH_KEY, trash);
+      selectedCandidateParts.clear();
       showPartsForMakerModel(maker, model);
     }
 
@@ -2270,10 +2443,18 @@
     });
 
     document.getElementById("candidateAddBtn").addEventListener("click", addCandidateFromList);
+    document.getElementById("candidateText").addEventListener("input", updateCandidateActionButtons);
+    document.getElementById("candidateBulkAddBtn").addEventListener("click", addSelectedCandidateParts);
+    document.getElementById("candidateEditSelectedBtn").addEventListener("click", editSelectedCandidatePart);
+    document.getElementById("candidateDeleteSelectedBtn").addEventListener("click", askSelectedCandidatePartsDelete);
     document.getElementById("candidateBackBtn").addEventListener("click", goCandidateBack);
-    document.getElementById("candidateSearchInput").addEventListener("input", refreshCandidateView);
+    document.getElementById("candidateSearchInput").addEventListener("input", () => {
+      updateCandidateActionButtons();
+      refreshCandidateView();
+    });
     document.getElementById("candidateSearchClearBtn").addEventListener("click", () => {
       document.getElementById("candidateSearchInput").value = "";
+      updateCandidateActionButtons();
       refreshCandidateView();
     });
     document.getElementById("candidateView").addEventListener("click", (event) => {
@@ -2291,6 +2472,9 @@
       }
       if (button.dataset.action === "showPartsForMakerModel") {
         showPartsForMakerModel(button.dataset.maker, button.dataset.model);
+      }
+      if (button.dataset.action === "toggleCandidatePart") {
+        toggleCandidatePart(button);
       }
       if (button.dataset.action === "addCandidateToEstimate") {
         addCandidateToEstimate(button.dataset.maker, button.dataset.model, button.dataset.value, button.dataset.partNo);
