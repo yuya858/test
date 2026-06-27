@@ -1514,11 +1514,10 @@
       const deleteBtn = document.getElementById("candidateDeleteSelectedBtn");
       const selectedCount = selectedCandidateParts.size;
       const candidateValue = String(candidateText?.value || "").trim();
-      const partNoValue = String(candidatePartNoText?.value || "").trim();
       const partMaker = candidateAddMakerValue();
       const partModel = candidateAddModelValue();
       if (addBtn) addBtn.disabled = candidateAddMode === "part"
-        ? !(candidateValue && partNoValue && partMaker && partModel)
+        ? !(candidateValue && partMaker && partModel)
         : !(candidateAddMode === "maker" && candidateValue);
       if (clearBtn) clearBtn.disabled = !String(searchInput?.value || "").trim();
       const canBulkAdd = Boolean(activeCandidateMaker && activeCandidateModel && selectedCount > 0);
