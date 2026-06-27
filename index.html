@@ -800,11 +800,10 @@
         </div>
         <div id="candidateMenu" hidden style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
           <button id="candidateAddStartBtn" type="button">候補の追加</button>
-          <button id="candidateShowListBtn" type="button">追加された候補</button>
+          <button id="candidateShowListBtn" type="button">候補一覧</button>
         </div>
         <div id="candidateAddPanel" hidden style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-          <button id="candidateAddMakerModeBtn" type="button">メーカー</button>
-          <button id="candidateAddPartModeBtn" type="button">部品名/部品番号</button>
+          <span style="font-weight:600;">部品名/部品番号</span>
           <select id="candidateMakerSelect" hidden style="min-height:36px; padding:0 8px; min-width:160px;" aria-label="メーカー選択"></select>
           <input id="candidateNewMakerText" hidden style="min-height:36px; padding:0 8px; min-width:160px;" placeholder="新しいメーカー">
           <select id="candidateModelSelect" hidden style="min-height:36px; padding:0 8px; min-width:160px;" aria-label="型式選択"></select>
@@ -1509,7 +1508,6 @@
       const candidatePartNoText = document.getElementById("candidatePartNoText");
       const searchInput = document.getElementById("candidateSearchInput");
       const addBtn = document.getElementById("candidateAddBtn");
-      const addPartModeBtn = document.getElementById("candidateAddPartModeBtn");
       const clearBtn = document.getElementById("candidateSearchClearBtn");
       const bulkAddBtn = document.getElementById("candidateBulkAddBtn");
       const editBtn = document.getElementById("candidateEditSelectedBtn");
@@ -1519,7 +1517,6 @@
       const partNoValue = String(candidatePartNoText?.value || "").trim();
       const partMaker = candidateAddMakerValue();
       const partModel = candidateAddModelValue();
-      if (addPartModeBtn) addPartModeBtn.disabled = false;
       if (addBtn) addBtn.disabled = candidateAddMode === "part"
         ? !(candidateValue && partNoValue && partMaker && partModel)
         : !(candidateAddMode === "maker" && candidateValue);
@@ -1787,16 +1784,11 @@
       const panel = document.getElementById("candidateAddPanel");
       panel.hidden = false;
       document.getElementById("candidateMenu").hidden = true;
-      candidateAddMode = "";
       document.getElementById("candidateText").value = "";
       document.getElementById("candidatePartNoText").value = "";
       document.getElementById("candidateNewMakerText").value = "";
       document.getElementById("candidateNewModelText").value = "";
-      document.getElementById("candidateMakerSelect").hidden = true;
-      document.getElementById("candidateNewMakerText").hidden = true;
-      document.getElementById("candidateModelSelect").hidden = true;
-      document.getElementById("candidateNewModelText").hidden = true;
-      document.getElementById("candidatePartNoText").hidden = true;
+      selectCandidateAddMode("part");
       updateCandidateActionButtons();
     }
 
@@ -2663,8 +2655,6 @@
       document.getElementById("candidateMenu").hidden = true;
       refreshCandidateView();
     });
-    document.getElementById("candidateAddMakerModeBtn").addEventListener("click", () => selectCandidateAddMode("maker"));
-    document.getElementById("candidateAddPartModeBtn").addEventListener("click", () => selectCandidateAddMode("part"));
     document.getElementById("candidateAddCancelBtn").addEventListener("click", resetCandidateAddPanel);
     document.getElementById("candidateAddBtn").addEventListener("click", addCandidateFromList);
     document.getElementById("candidateText").addEventListener("input", updateCandidateActionButtons);
