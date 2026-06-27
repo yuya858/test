@@ -181,6 +181,13 @@
       box-shadow: inset 0 0 0 2px #2563eb;
     }
 
+    .candidate-row.selected td {
+      background: #e8f1ff;
+      box-shadow: inset 0 0 0 2px #2563eb;
+    }
+
+    .candidate-value-table th:last-child,
+    .candidate-value-table td:last-child,
     .part-choice-table th:last-child,
     .part-choice-table td:last-child {
       width: auto;
@@ -786,11 +793,18 @@
         </div>
         <div id="makerCandidateTabs" hidden></div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-          <input id="candidateText" style="min-height:36px; padding:0 8px; min-width:220px;" placeholder="候補に追加する文字">
-          <button id="candidateAddBtn" type="button" disabled>候補追加</button>
+          <button id="candidateAddStartBtn" type="button">候補追加</button>
           <button id="candidateBulkAddBtn" type="button" disabled>見積追加</button>
           <button id="candidateEditSelectedBtn" type="button" disabled>編集</button>
           <button class="danger" id="candidateDeleteSelectedBtn" type="button" disabled>削除</button>
+        </div>
+        <div id="candidateAddPanel" hidden style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+          <button id="candidateAddMakerModeBtn" type="button">メーカー</button>
+          <button id="candidateAddPartModeBtn" type="button">部品名/部品番号</button>
+          <input id="candidateText" style="min-height:36px; padding:0 8px; min-width:190px;" placeholder="追加する文字">
+          <input id="candidatePartNoText" hidden style="min-height:36px; padding:0 8px; min-width:150px;" placeholder="部品番号">
+          <button id="candidateAddBtn" type="button" disabled>追加</button>
+          <button id="candidateAddCancelBtn" type="button">閉じる</button>
         </div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
           <input id="candidateSearchInput" style="min-height:36px; padding:0 8px; min-width:220px; flex:1;" placeholder="候補を検索">
@@ -887,6 +901,8 @@
     let activeCandidateMaker = "";
     let activeCandidateModel = "";
     let selectedCandidateParts = new Set();
+    let selectedCandidateItem = null;
+    let candidateAddMode = "";
     let candidateBulkAddConfirm = false;
     let candidateBackStack = [];
     let undoStack = [];
@@ -1482,14 +1498,22 @@
 
     function updateCandidateActionButtons() {
       const candidateText = document.getElementById("candidateText");
+      const candidatePartNoText = document.getElementById("candidatePartNoText");
       const searchInput = document.getElementById("candidateSearchInput");
       const addBtn = document.getElementById("candidateAddBtn");
+      const addPartModeBtn = document.getElementById("candidateAddPartModeBtn");
       const clearBtn = document.getElementById("candidateSearchClearBtn");
       const bulkAddBtn = document.getElementById("candidateBulkAddBtn");
       const editBtn = document.getElementById("candidateEditSelectedBtn");
       const deleteBtn = document.getElementById("candidateDeleteSelectedBtn");
       const selectedCount = selectedCandidateParts.size;
-      if (addBtn) addBtn.disabled = !String(candidateText?.value || "").trim();
+      const hasPartContext = Boolean(activeCandidateMaker && activeCandidateModel);
+      const candidateValue = String(candidateText?.value || "").trim();
+      const partNoValue = String(candidatePartNoText?.value || "").trim();
+      if (addPartModeBtn) addPartModeBtn.disabled = !hasPartContext;
+      if (addBtn) addBtn.disabled = candidateAddMode === "part"
+        ? !(candidateValue && partNoValue && hasPartContext)
+        : !(candidateAddMode === "maker" && candidateValue);
       if (clearBtn) clearBtn.disabled = !String(searchInput?.value || "").trim();
       const canBulkAdd = Boolean(activeCandidateMaker && activeCandidateModel && selectedCount > 0);
       if (!canBulkAdd) candidateBulkAddConfirm = false;
@@ -1497,8 +1521,8 @@
         bulkAddBtn.disabled = !canBulkAdd;
         bulkAddBtn.textContent = candidateBulkAddConfirm ? "✓" : "見積追加";
       }
-      if (editBtn) editBtn.disabled = !(activeCandidateMaker && activeCandidateModel && selectedCount === 1);
-      if (deleteBtn) deleteBtn.disabled = !(activeCandidateMaker && activeCandidateModel && selectedCount > 0);
+      if (editBtn) editBtn.disabled = !(selectedCandidateItem || (activeCandidateMaker && activeCandidateModel && selectedCount === 1));
+      if (deleteBtn) deleteBtn.disabled = !(selectedCandidateItem || (activeCandidateMaker && activeCandidateModel && selectedCount > 0));
     }
 
     function renderCandidateList() {
@@ -1515,6 +1539,7 @@
       activeCandidateMaker = "";
       activeCandidateModel = "";
       selectedCandidateParts.clear();
+      selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
       updateCandidateContext();
       updateCandidateActionButtons();
@@ -1524,19 +1549,15 @@
         return;
       }
       target.innerHTML = `
-        <table class="record-table">
-          <thead><tr><th>項目</th><th>候補</th><th>操作</th></tr></thead>
+        <table class="record-table candidate-value-table">
+          <thead><tr><th>項目</th><th>候補</th></tr></thead>
           <tbody>
             ${rows.map((row) => `
-              <tr>
+              <tr class="candidate-row" data-action="selectCandidateItem" data-type="history" data-key="${escapeHtml(row.key)}" data-value="${escapeHtml(row.value)}">
                 <td data-label="項目">${escapeHtml(candidateLabel(row.key))}</td>
                 <td data-label="候補">${row.key === "items.maker"
                   ? `<button type="button" data-action="showMakerModels" data-maker="${escapeHtml(row.value)}">${escapeHtml(row.value)}</button>`
                   : escapeHtml(row.value)}</td>
-                <td data-label="操作"><div class="candidate-actions">
-                  <button type="button" data-action="editCandidate" data-key="${escapeHtml(row.key)}" data-value="${escapeHtml(row.value)}">編集</button>
-                  <button class="danger" type="button" data-action="askCandidateDelete" data-key="${escapeHtml(row.key)}" data-value="${escapeHtml(row.value)}">削除</button>
-                </div></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1552,6 +1573,7 @@
       activeCandidateMaker = maker;
       activeCandidateModel = "";
       selectedCandidateParts.clear();
+      selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
       const models = (readMakerModelMap()[maker] || []).filter((model) =>
         matchesCandidateSearch([maker, model])
@@ -1570,17 +1592,13 @@
         return;
       }
       target.innerHTML = `
-        <table class="record-table">
-          <thead><tr><th>メーカー</th><th>型式</th><th>操作</th></tr></thead>
+        <table class="record-table candidate-value-table">
+          <thead><tr><th>メーカー</th><th>型式</th></tr></thead>
           <tbody>
             ${models.map((model) => `
-              <tr>
+              <tr class="candidate-row" data-action="selectCandidateItem" data-type="makerModel" data-maker="${escapeHtml(maker)}" data-value="${escapeHtml(model)}">
                 <td data-label="メーカー">${escapeHtml(maker)}</td>
                 <td data-label="型式"><button type="button" data-action="showPartsForMakerModel" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}">${escapeHtml(model)}</button></td>
-                <td data-label="操作"><div class="candidate-actions">
-                  <button type="button" data-action="editMakerModel" data-maker="${escapeHtml(maker)}" data-value="${escapeHtml(model)}">編集</button>
-                  <button class="danger" type="button" data-action="askMakerModelDelete" data-maker="${escapeHtml(maker)}" data-value="${escapeHtml(model)}">削除</button>
-                </div></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1592,6 +1610,7 @@
       activeCandidateMaker = maker;
       activeCandidateModel = model;
       selectedCandidateParts.clear();
+      selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
       const parts = (readMakerModelPartMap()[makerModelKey(maker, model)] || []).filter((part) =>
         matchesCandidateSearch([maker, model, part, partNumberForRow(maker, model, part)])
@@ -1682,10 +1701,67 @@
       }));
     }
 
+    function resetCandidateAddPanel() {
+      candidateAddMode = "";
+      document.getElementById("candidateText").value = "";
+      document.getElementById("candidatePartNoText").value = "";
+      document.getElementById("candidateText").placeholder = "追加する文字";
+      document.getElementById("candidatePartNoText").hidden = true;
+      document.getElementById("candidateAddPanel").hidden = true;
+      updateCandidateActionButtons();
+    }
+
+    function openCandidateAddPanel() {
+      const panel = document.getElementById("candidateAddPanel");
+      panel.hidden = false;
+      candidateAddMode = "";
+      document.getElementById("candidateText").value = "";
+      document.getElementById("candidatePartNoText").value = "";
+      document.getElementById("candidatePartNoText").hidden = true;
+      updateCandidateActionButtons();
+    }
+
+    function selectCandidateAddMode(mode) {
+      candidateAddMode = mode;
+      const text = document.getElementById("candidateText");
+      const partNo = document.getElementById("candidatePartNoText");
+      if (mode === "part" && !(activeCandidateMaker && activeCandidateModel)) {
+        candidateAddMode = "";
+        updateCandidateActionButtons();
+        return;
+      }
+      text.value = "";
+      partNo.value = "";
+      text.placeholder = mode === "part" ? "部品名" : "メーカー名";
+      partNo.hidden = mode !== "part";
+      text.focus();
+      updateCandidateActionButtons();
+    }
+
+    function selectCandidateItem(row) {
+      selectedCandidateParts.clear();
+      candidateBulkAddConfirm = false;
+      document.querySelectorAll("#candidateList .candidate-row.selected").forEach((item) => {
+        item.classList.remove("selected");
+      });
+      row.classList.add("selected");
+      selectedCandidateItem = {
+        type: row.dataset.type,
+        key: row.dataset.key,
+        maker: row.dataset.maker,
+        value: row.dataset.value,
+      };
+      updateCandidateActionButtons();
+    }
+
     function toggleCandidatePart(button) {
       const part = String(button?.dataset.value || "").trim();
       if (!part) return;
       const row = button.closest("tr");
+      selectedCandidateItem = null;
+      document.querySelectorAll("#candidateList .candidate-row.selected").forEach((item) => {
+        item.classList.remove("selected");
+      });
       if (selectedCandidateParts.has(part)) {
         selectedCandidateParts.delete(part);
         row?.classList.remove("selected");
@@ -1707,12 +1783,32 @@
     }
 
     function editSelectedCandidatePart() {
+      if (selectedCandidateItem?.type === "history") {
+        editCandidateValue(selectedCandidateItem.key, selectedCandidateItem.value);
+        selectedCandidateItem = null;
+        updateCandidateActionButtons();
+        return;
+      }
+      if (selectedCandidateItem?.type === "makerModel") {
+        editMakerModel(selectedCandidateItem.maker, selectedCandidateItem.value);
+        selectedCandidateItem = null;
+        updateCandidateActionButtons();
+        return;
+      }
       const [part] = Array.from(selectedCandidateParts);
       if (!part) return;
       editMakerModelPart(activeCandidateMaker, activeCandidateModel, part);
     }
 
     function askSelectedCandidatePartsDelete() {
+      if (selectedCandidateItem?.type === "history") {
+        askCandidateDelete(selectedCandidateItem.key, selectedCandidateItem.value);
+        return;
+      }
+      if (selectedCandidateItem?.type === "makerModel") {
+        askMakerModelDelete(selectedCandidateItem.maker, selectedCandidateItem.value);
+        return;
+      }
       const values = Array.from(selectedCandidateParts);
       if (!values.length) return;
       candidateBulkAddConfirm = false;
@@ -1733,11 +1829,24 @@
     }
 
     function addCandidateFromList() {
-      const value = document.getElementById("candidateText").value;
-      rememberValue(activeCandidateKey, value);
-      document.getElementById("candidateText").value = "";
-      updateCandidateActionButtons();
-      renderCandidateList();
+      const value = document.getElementById("candidateText").value.trim();
+      const partNo = document.getElementById("candidatePartNoText").value.trim();
+      if (candidateAddMode === "maker") {
+        rememberValue("items.maker", value);
+        activeCandidateKey = "items.maker";
+      }
+      if (candidateAddMode === "part" && activeCandidateMaker && activeCandidateModel) {
+        const partMap = readMakerModelPartMap();
+        const key = makerModelKey(activeCandidateMaker, activeCandidateModel);
+        partMap[key] = addUnique(partMap[key], value);
+        writeMakerModelPartMap(partMap);
+        const numberMap = readPartNumberMap();
+        numberMap[partNumberKey(activeCandidateMaker, activeCandidateModel, value)] = partNo;
+        numberMap[partMapKey(activeCandidateModel, value)] = partNo;
+        writePartNumberMap(numberMap);
+      }
+      resetCandidateAddPanel();
+      refreshCandidateView();
     }
 
     function editCandidateValue(key, oldValue) {
@@ -2447,8 +2556,13 @@
       chooseSuggestion(button);
     });
 
+    document.getElementById("candidateAddStartBtn").addEventListener("click", openCandidateAddPanel);
+    document.getElementById("candidateAddMakerModeBtn").addEventListener("click", () => selectCandidateAddMode("maker"));
+    document.getElementById("candidateAddPartModeBtn").addEventListener("click", () => selectCandidateAddMode("part"));
+    document.getElementById("candidateAddCancelBtn").addEventListener("click", resetCandidateAddPanel);
     document.getElementById("candidateAddBtn").addEventListener("click", addCandidateFromList);
     document.getElementById("candidateText").addEventListener("input", updateCandidateActionButtons);
+    document.getElementById("candidatePartNoText").addEventListener("input", updateCandidateActionButtons);
     document.getElementById("candidateBulkAddBtn").addEventListener("click", addSelectedCandidateParts);
     document.getElementById("candidateEditSelectedBtn").addEventListener("click", editSelectedCandidatePart);
     document.getElementById("candidateDeleteSelectedBtn").addEventListener("click", askSelectedCandidatePartsDelete);
@@ -2471,6 +2585,11 @@
     document.getElementById("candidateDeleteYesBtn").addEventListener("click", confirmCandidateDelete);
     document.getElementById("candidateList").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-action]");
+      const row = event.target.closest("tr[data-action='selectCandidateItem']");
+      if (row && !button) {
+        selectCandidateItem(row);
+        return;
+      }
       if (!button) return;
       if (button.dataset.action === "showMakerModels") {
         showModelsForMaker(button.dataset.maker);
