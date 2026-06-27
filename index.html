@@ -171,6 +171,11 @@
       white-space: nowrap;
     }
 
+    .part-choice-heading {
+      min-height: auto;
+      font-weight: 600;
+    }
+
     .part-choice-row.selected td {
       background: #e8f1ff;
       box-shadow: inset 0 0 0 2px #2563eb;
@@ -1601,16 +1606,16 @@
       updateCandidateBackButton();
       const target = document.getElementById("candidateList");
       if (!parts.length) {
-        target.innerHTML = `<div class="empty">${escapeHtml(maker)} / ${escapeHtml(model)} の部品候補はまだありません</div>`;
+        target.innerHTML = `<div class="empty">${escapeHtml(maker)} / ${escapeHtml(model)} の部品名・部品番号はまだありません</div>`;
         return;
       }
       target.innerHTML = `
         <table class="record-table part-choice-table">
-          <thead><tr><th>部品候補</th></tr></thead>
+          <thead><tr><th><div class="part-choice part-choice-heading"><span>部品名</span><span class="part-number">部品番号</span></div></th></tr></thead>
           <tbody>
             ${parts.map((part) => `
               <tr class="part-choice-row${selectedCandidateParts.has(part) ? " selected" : ""}">
-                <td data-label="部品候補">
+                <td data-label="部品名・部品番号">
                   <button class="part-choice" type="button" data-action="toggleCandidatePart" data-value="${escapeHtml(part)}" data-part-no="${escapeHtml(partNumberForRow(maker, model, part))}">
                     <span>${escapeHtml(part)}</span>
                     <span class="part-number">${escapeHtml(partNumberForRow(maker, model, part))}</span>
