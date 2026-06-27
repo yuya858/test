@@ -123,6 +123,13 @@
       width: 230px;
     }
 
+    .candidate-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
     .empty {
       padding: 24px 8px;
       color: #6b7280;
@@ -224,6 +231,7 @@
       color: var(--ink);
       font: inherit;
       font-size: inherit;
+      font-weight: 500;
       text-align: inherit;
       padding: 3px 6px;
       outline: none;
@@ -288,7 +296,7 @@
     }
 
     .repair-box {
-      grid-template-columns: 96px 1fr 76px 150px;
+      grid-template-columns: 96px 1fr 70px 180px;
       gap: 8px;
     }
 
@@ -427,22 +435,86 @@
       .entry {
         font-size: 16px;
       }
+
+      #candidateView .list-panel {
+        padding: 10px;
+      }
+
+      #candidateView .record-table {
+        border-collapse: separate;
+        border-spacing: 0 8px;
+      }
+
+      #candidateView .record-table thead {
+        display: none;
+      }
+
+      #candidateView .record-table tr {
+        display: block;
+        border: var(--line-width) solid #c8d0da;
+        background: #fff;
+        padding: 6px;
+      }
+
+      #candidateView .record-table td {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100% !important;
+        min-height: 34px;
+        height: auto;
+        border: 0;
+        border-bottom: var(--line-width) solid #edf1f5;
+        text-align: left !important;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+
+      #candidateView .record-table td:last-child {
+        border-bottom: 0;
+      }
+
+      #candidateView .record-table td::before {
+        content: attr(data-label);
+        flex: 0 0 92px;
+        color: #52606d;
+        font-size: 12px;
+      }
+
+      #candidateView .record-table button {
+        min-height: 32px;
+        padding: 0 9px;
+      }
     }
 
     @media print {
-      @page { size: A4 landscape; margin: 6mm; }
-      body { background: #fff; }
+      @page { size: A4 landscape; margin: 0; }
+      html, body {
+        width: 297mm;
+        height: 210mm;
+        margin: 0;
+        background: #fff;
+        overflow: hidden;
+      }
       .toolbar, .list-panel, .confirm-backdrop, .suggest-box { display: none; }
-      .wrap { padding: 0; overflow: visible; }
+      .wrap {
+        width: 297mm;
+        height: 210mm;
+        padding: 4mm;
+        overflow: hidden;
+      }
       .view[hidden] { display: block; }
       #savedView, #draftView, #candidateView, #trashView { display: none; }
       .sheet {
-        width: 285mm;
-        height: 198mm;
+        width: 289mm;
+        height: 202mm;
         min-height: 0;
         box-shadow: none;
         padding: 0;
-        margin: 0 auto;
+        margin: 0;
+        transform: none !important;
+        page-break-after: avoid;
+        page-break-inside: avoid;
       }
       body { font-size: var(--print-font-size, 11px); }
       .header { margin-bottom: 10px; }
@@ -634,6 +706,10 @@
           <input id="candidateText" style="min-height:36px; padding:0 8px; min-width:220px;" placeholder="候補に追加する文字">
           <button id="candidateAddBtn" type="button">候補追加</button>
         </div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+          <input id="candidateSearchInput" style="min-height:36px; padding:0 8px; min-width:220px; flex:1;" placeholder="候補を検索">
+          <button id="candidateSearchClearBtn" type="button">検索クリア</button>
+        </div>
         <div id="candidateList"></div>
       </div>
     </section>
@@ -722,6 +798,8 @@
     let pendingCandidateDelete = null;
     let pendingPermanentDelete = null;
     let activeCandidateKey = "user_name";
+    let activeCandidateMaker = "";
+    let activeCandidateModel = "";
     let candidateBackStack = [];
     let undoStack = [];
     let lastUndoSnapshot = "";
@@ -1282,15 +1360,39 @@
       input.focus();
     }
 
+    function candidateSearchText() {
+      return document.getElementById("candidateSearchInput")?.value.trim() || "";
+    }
+
+    function matchesCandidateSearch(values) {
+      const query = candidateSearchText();
+      if (!query) return true;
+      return values.some((value) => String(value || "").includes(query));
+    }
+
+    function refreshCandidateView() {
+      if (activeCandidateMaker && activeCandidateModel) {
+        showPartsForMakerModel(activeCandidateMaker, activeCandidateModel, false);
+      } else if (activeCandidateMaker) {
+        showModelsForMaker(activeCandidateMaker, false);
+      } else {
+        renderCandidateList();
+      }
+    }
+
     function renderCandidateList() {
       const target = document.getElementById("candidateList");
       const history = readHistory();
       const values = history[activeCandidateKey] || [];
-      const rows = values.map((value) => ({ key: activeCandidateKey, value }));
+      const rows = values
+        .map((value) => ({ key: activeCandidateKey, value }))
+        .filter((row) => matchesCandidateSearch([candidateLabel(row.key), row.value]));
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
       });
       document.getElementById("makerCandidateTabs").style.display = "none";
+      activeCandidateMaker = "";
+      activeCandidateModel = "";
       updateCandidateBackButton();
       if (!rows.length) {
         target.innerHTML = `<div class="empty">${candidateLabel(activeCandidateKey)}の候補はまだありません</div>`;
@@ -1302,11 +1404,14 @@
           <tbody>
             ${rows.map((row) => `
               <tr>
-                <td>${escapeHtml(candidateLabel(row.key))}</td>
-                <td>${row.key === "items.maker"
+                <td data-label="項目">${escapeHtml(candidateLabel(row.key))}</td>
+                <td data-label="候補">${row.key === "items.maker"
                   ? `<button type="button" data-action="showMakerModels" data-maker="${escapeHtml(row.value)}">${escapeHtml(row.value)}</button>`
                   : escapeHtml(row.value)}</td>
-                <td><button class="danger" type="button" data-action="askCandidateDelete" data-key="${escapeHtml(row.key)}" data-value="${escapeHtml(row.value)}">削除</button></td>
+                <td data-label="操作"><div class="candidate-actions">
+                  <button type="button" data-action="editCandidate" data-key="${escapeHtml(row.key)}" data-value="${escapeHtml(row.value)}">編集</button>
+                  <button class="danger" type="button" data-action="askCandidateDelete" data-key="${escapeHtml(row.key)}" data-value="${escapeHtml(row.value)}">削除</button>
+                </div></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1319,7 +1424,11 @@
 
     function showModelsForMaker(maker, rememberBack = true) {
       if (rememberBack) candidateBackStack.push({ type: "list", key: activeCandidateKey });
-      const models = readMakerModelMap()[maker] || [];
+      activeCandidateMaker = maker;
+      activeCandidateModel = "";
+      const models = (readMakerModelMap()[maker] || []).filter((model) =>
+        matchesCandidateSearch([maker, model])
+      );
       activeCandidateKey = "items.model";
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
@@ -1337,9 +1446,12 @@
           <tbody>
             ${models.map((model) => `
               <tr>
-                <td>${escapeHtml(maker)}</td>
-                <td><button type="button" data-action="showPartsForMakerModel" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}">${escapeHtml(model)}</button></td>
-                <td><button class="danger" type="button" data-action="askMakerModelDelete" data-maker="${escapeHtml(maker)}" data-value="${escapeHtml(model)}">削除</button></td>
+                <td data-label="メーカー">${escapeHtml(maker)}</td>
+                <td data-label="型式"><button type="button" data-action="showPartsForMakerModel" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}">${escapeHtml(model)}</button></td>
+                <td data-label="操作"><div class="candidate-actions">
+                  <button type="button" data-action="editMakerModel" data-maker="${escapeHtml(maker)}" data-value="${escapeHtml(model)}">編集</button>
+                  <button class="danger" type="button" data-action="askMakerModelDelete" data-maker="${escapeHtml(maker)}" data-value="${escapeHtml(model)}">削除</button>
+                </div></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1348,7 +1460,11 @@
 
     function showPartsForMakerModel(maker, model, rememberBack = true) {
       if (rememberBack) candidateBackStack.push({ type: "models", maker });
-      const parts = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
+      activeCandidateMaker = maker;
+      activeCandidateModel = model;
+      const parts = (readMakerModelPartMap()[makerModelKey(maker, model)] || []).filter((part) =>
+        matchesCandidateSearch([maker, model, part, partNumberForRow(maker, model, part)])
+      );
       activeCandidateKey = "items.part";
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
@@ -1366,14 +1482,15 @@
           <tbody>
             ${parts.map((part) => `
               <tr>
-                <td>${escapeHtml(maker)}</td>
-                <td>${escapeHtml(model)}</td>
-                <td>${escapeHtml(part)}</td>
-                <td>${escapeHtml(partNumberForRow(maker, model, part))}</td>
-                <td>
+                <td data-label="メーカー">${escapeHtml(maker)}</td>
+                <td data-label="型式">${escapeHtml(model)}</td>
+                <td data-label="部品名">${escapeHtml(part)}</td>
+                <td data-label="部品番号">${escapeHtml(partNumberForRow(maker, model, part))}</td>
+                <td data-label="操作"><div class="candidate-actions">
                   <button type="button" data-action="addCandidateToEstimate" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}" data-part-no="${escapeHtml(partNumberForRow(maker, model, part))}">見積もりに追加</button>
+                  <button type="button" data-action="editMakerModelPart" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}">編集</button>
                   <button class="danger" type="button" data-action="askMakerModelPartDelete" data-maker="${escapeHtml(maker)}" data-model="${escapeHtml(model)}" data-value="${escapeHtml(part)}">削除</button>
-                </td>
+                </div></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1416,8 +1533,75 @@
       renderCandidateList();
     }
 
+    function editCandidateValue(key, oldValue) {
+      const nextValue = prompt("候補を編集", oldValue);
+      const text = String(nextValue || "").trim();
+      if (!text || text === oldValue) return;
+      const history = readHistory();
+      const normalizedKey = historyKey(key);
+      history[normalizedKey] = (history[normalizedKey] || []).map((item) => item === oldValue ? text : item);
+      writeHistory(history);
+      renderCandidateList();
+    }
+
+    function editMakerModel(maker, oldModel) {
+      const nextModel = prompt("型式を編集", oldModel);
+      const text = String(nextModel || "").trim();
+      if (!text || text === oldModel) return;
+      const map = readMakerModelMap();
+      map[maker] = (map[maker] || []).map((item) => item === oldModel ? text : item);
+      writeMakerModelMap(map);
+      const partMap = readMakerModelPartMap();
+      const oldKey = makerModelKey(maker, oldModel);
+      const newKey = makerModelKey(maker, text);
+      if (partMap[oldKey]) {
+        partMap[newKey] = mergeUniqueText(partMap[newKey] || [], partMap[oldKey] || []);
+        delete partMap[oldKey];
+        writeMakerModelPartMap(partMap);
+      }
+      const numberMap = readPartNumberMap();
+      Object.keys(numberMap).forEach((key) => {
+        const parts = key.split("|||");
+        if (parts.length === 3 && parts[0] === maker && parts[1] === oldModel) {
+          numberMap[partNumberKey(maker, text, parts[2])] = numberMap[key];
+          delete numberMap[key];
+        }
+        if (parts.length === 2 && parts[0] === oldModel) {
+          numberMap[partMapKey(text, parts[1])] = numberMap[key];
+          delete numberMap[key];
+        }
+      });
+      writePartNumberMap(numberMap);
+      showModelsForMaker(maker, false);
+    }
+
+    function editMakerModelPart(maker, model, oldPart) {
+      const nextPart = prompt("部品名を編集", oldPart);
+      const text = String(nextPart || "").trim();
+      if (!text || text === oldPart) return;
+      const partMap = readMakerModelPartMap();
+      const key = makerModelKey(maker, model);
+      partMap[key] = (partMap[key] || []).map((item) => item === oldPart ? text : item);
+      writeMakerModelPartMap(partMap);
+      const numberMap = readPartNumberMap();
+      const makerNumberKey = partNumberKey(maker, model, oldPart);
+      const oldNumberKey = partMapKey(model, oldPart);
+      if (numberMap[makerNumberKey]) {
+        numberMap[partNumberKey(maker, model, text)] = numberMap[makerNumberKey];
+        delete numberMap[makerNumberKey];
+      }
+      if (numberMap[oldNumberKey]) {
+        numberMap[partMapKey(model, text)] = numberMap[oldNumberKey];
+        delete numberMap[oldNumberKey];
+      }
+      writePartNumberMap(numberMap);
+      showPartsForMakerModel(maker, model, false);
+    }
+
     function selectCandidateKey(key) {
       candidateBackStack = [];
+      activeCandidateMaker = "";
+      activeCandidateModel = "";
       activeCandidateKey = key;
       renderCandidateList();
     }
@@ -1470,6 +1654,8 @@
       writeMakerModelMap(map);
       const trash = readList(CANDIDATE_TRASH_KEY);
       trash.unshift({
+        type: "makerModel",
+        maker,
         key: "items.model",
         value: model,
         label: `型式（${maker}）`,
@@ -1486,6 +1672,9 @@
       writeMakerModelPartMap(map);
       const trash = readList(CANDIDATE_TRASH_KEY);
       trash.unshift({
+        type: "makerModelPart",
+        maker,
+        model,
         key: "items.part",
         value: part,
         label: `部品名（${maker} / ${model}）`,
@@ -1743,6 +1932,47 @@
       renderRecordList("trash");
     }
 
+    function candidateTrashContext(item) {
+      let maker = item.maker || "";
+      let model = item.model || "";
+      const label = String(item.label || "");
+      if (!maker && item.key === "items.model") {
+        const match = label.match(/型式（(.+)）/);
+        if (match) maker = match[1];
+      }
+      if ((!maker || !model) && item.key === "items.part") {
+        const match = label.match(/部品名（(.+) \/ (.+)）/);
+        if (match) {
+          maker = maker || match[1];
+          model = model || match[2];
+        }
+      }
+      return { maker, model };
+    }
+
+    function restoreCandidate(index) {
+      const list = readList(CANDIDATE_TRASH_KEY);
+      const itemIndex = Number(index);
+      const item = list[itemIndex];
+      if (!item) return;
+      const { maker, model } = candidateTrashContext(item);
+      if (item.type === "makerModel" || (item.key === "items.model" && maker)) {
+        const map = readMakerModelMap();
+        map[maker] = mergeUniqueText(map[maker] || [], [item.value]);
+        writeMakerModelMap(map);
+      } else if (item.type === "makerModelPart" || (item.key === "items.part" && maker && model)) {
+        const partMap = readMakerModelPartMap();
+        const key = makerModelKey(maker, model);
+        partMap[key] = mergeUniqueText(partMap[key] || [], [item.value]);
+        writeMakerModelPartMap(partMap);
+      } else {
+        rememberValue(item.key, item.value);
+      }
+      list.splice(itemIndex, 1);
+      writeList(CANDIDATE_TRASH_KEY, list);
+      renderRecordList("trash");
+    }
+
     function askPermanentDelete(type, value, label) {
       pendingPermanentDelete = { type, value };
       document.getElementById("permanentDeleteTitle").textContent = `${label}を完全削除しますか？`;
@@ -1870,7 +2100,10 @@
                 <td>${escapeHtml(item.label || candidateLabel(item.key))}</td>
                 <td>${escapeHtml(item.value)}</td>
                 <td>${escapeHtml(item.deletedAt)}</td>
-                <td><button class="danger" type="button" data-action="deleteCandidateForever" data-index="${index}">完全削除</button></td>
+                <td>
+                  <button type="button" data-action="restoreCandidate" data-index="${index}">復元</button>
+                  <button class="danger" type="button" data-action="deleteCandidateForever" data-index="${index}">完全削除</button>
+                </td>
               </tr>
             `).join("")}
           </tbody>
@@ -1980,6 +2213,11 @@
 
     document.getElementById("candidateAddBtn").addEventListener("click", addCandidateFromList);
     document.getElementById("candidateBackBtn").addEventListener("click", goCandidateBack);
+    document.getElementById("candidateSearchInput").addEventListener("input", refreshCandidateView);
+    document.getElementById("candidateSearchClearBtn").addEventListener("click", () => {
+      document.getElementById("candidateSearchInput").value = "";
+      refreshCandidateView();
+    });
     document.getElementById("candidateView").addEventListener("click", (event) => {
       const button = event.target.closest("[data-candidate-key]");
       if (!button) return;
@@ -1998,6 +2236,15 @@
       }
       if (button.dataset.action === "addCandidateToEstimate") {
         addCandidateToEstimate(button.dataset.maker, button.dataset.model, button.dataset.value, button.dataset.partNo);
+      }
+      if (button.dataset.action === "editCandidate") {
+        editCandidateValue(button.dataset.key, button.dataset.value);
+      }
+      if (button.dataset.action === "editMakerModel") {
+        editMakerModel(button.dataset.maker, button.dataset.value);
+      }
+      if (button.dataset.action === "editMakerModelPart") {
+        editMakerModelPart(button.dataset.maker, button.dataset.model, button.dataset.value);
       }
       if (button.dataset.action === "askCandidateDelete") {
         askCandidateDelete(button.dataset.key, button.dataset.value);
@@ -2029,6 +2276,7 @@
       if (!button) return;
       if (button.dataset.action === "restore") restoreRecord(button.dataset.id);
       if (button.dataset.action === "delete") askPermanentDelete("estimate", button.dataset.id, "この見積もり");
+      if (button.dataset.action === "restoreCandidate") restoreCandidate(button.dataset.index);
       if (button.dataset.action === "deleteCandidateForever") askPermanentDelete("candidate", button.dataset.index, "この候補");
     });
 
