@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="mitsumori-app-version" content="2026-06-30-1">
+  <meta name="mitsumori-app-version" content="2026-06-30-2">
   <title>見積依頼書</title>
   <style>
     :root {
@@ -889,7 +889,7 @@
     const MAKER_MODEL_PART_KEY = "mitsumori_irai_maker_model_part_map_v1";
     const CANDIDATE_TRASH_KEY = "mitsumori_irai_candidate_trash_v1";
     const CANDIDATE_PURGED_KEY = "mitsumori_irai_candidate_purged_v1";
-    const APP_VERSION = "2026-06-30-1";
+    const APP_VERSION = "2026-06-30-2";
     const MODEL_TYPE_OPTIONS = ["ホイスト", "サドル"];
     const SUPABASE_URL = "https://tkhcbtcvtzkruporhnhw.supabase.co";
     const SUPABASE_KEY = "sb_publishable_BjUiMlNsWkuEFSlhLNf-Yg_QBhEe87N";
@@ -1313,14 +1313,9 @@
       return false;
     }
 
-    function isDeletedCandidate(key, value, maker = "", model = "") {
-      const trash = readList(CANDIDATE_TRASH_KEY);
-      const purged = readList(CANDIDATE_PURGED_KEY).map((identity) => ({ identity }));
-      return trash.some((item) =>
-        deletedCandidateMatches(item, key, value, maker, model)
-      ) || purged.some((item) => {
-        const parts = String(item.identity || "").split("|||");
-        return deletedCandidateMatches({
+    function candidateFromIdentity(identity) {
+      const parts = String(identity || "").split("|||");
+      return {
           type: parts[0],
           key: parts[1],
           maker: parts[2],
@@ -1328,8 +1323,24 @@
           value: parts[4],
           partNo: parts[5],
           label: parts[6],
-        }, key, value, maker, model);
-      });
+      };
+    }
+
+    function candidateBlockItems() {
+      return [
+        ...readList(CANDIDATE_TRASH_KEY),
+        ...readList(CANDIDATE_PURGED_KEY).map(candidateFromIdentity),
+      ];
+    }
+
+    function isDeletedCandidate(key, value, maker = "", model = "") {
+      return candidateBlockItems().some((item) =>
+        deletedCandidateMatches(item, key, value, maker, model)
+      );
+    }
+
+    function visibleCandidateValues(key, values, maker = "", model = "") {
+      return (values || []).filter((value) => !isDeletedCandidate(key, value, maker, model));
     }
 
     function isDeletedMaker(maker) {
@@ -1337,13 +1348,13 @@
     }
 
     function sanitizeDeletedCandidatesFromLocal() {
-      const trash = readList(CANDIDATE_TRASH_KEY);
-      if (!trash.length) return;
+      const blocked = candidateBlockItems();
+      if (!blocked.length) return;
 
       const history = readHistory();
       Object.keys(history).forEach((key) => {
         history[key] = (history[key] || []).filter((value) =>
-          !trash.some((item) => deletedCandidateMatches(item, key, value))
+          !blocked.some((item) => deletedCandidateMatches(item, key, value))
         );
       });
       writeHistory(history);
@@ -1355,7 +1366,7 @@
           return;
         }
         modelMap[maker] = (modelMap[maker] || []).filter((model) =>
-          !trash.some((item) => deletedCandidateMatches(item, "items.model", model, maker))
+          !blocked.some((item) => deletedCandidateMatches(item, "items.model", model, maker))
         );
       });
       writeMakerModelMap(modelMap);
@@ -1368,7 +1379,7 @@
           return;
         }
         partMap[key] = (partMap[key] || []).filter((part) =>
-          !trash.some((item) => deletedCandidateMatches(item, "items.part", part, maker, model))
+          !blocked.some((item) => deletedCandidateMatches(item, "items.part", part, maker, model))
         );
       });
       writeMakerModelPartMap(partMap);
@@ -1389,8 +1400,8 @@
         if (parts.length === 2) {
           const [model, part] = parts;
           if (
-            trash.some((item) => deletedCandidateMatches(item, "items.model", model)) ||
-            trash.some((item) => deletedCandidateMatches(item, "items.part", part))
+            blocked.some((item) => deletedCandidateMatches(item, "items.model", model)) ||
+            blocked.some((item) => deletedCandidateMatches(item, "items.part", part))
           ) {
             delete numberMap[key];
           }
@@ -1451,6 +1462,7 @@
       if (!text) return;
       if (!shouldUseHistory(key)) return;
       const normalizedKey = historyKey(key);
+      if (isDeletedCandidate(normalizedKey, text)) return;
       const history = readHistory();
       const list = history[normalizedKey] || [];
       history[normalizedKey] = [text, ...list.filter((item) => item !== text)].slice(0, 40);
@@ -1501,8 +1513,10 @@
         const model = String(row.effectiveModel || row.model || "").trim();
         const part = String(row.part || "").trim();
         if (!maker || !model) return;
+        if (isDeletedCandidate("items.maker", maker)) return;
+        if (isDeletedCandidate("items.model", model, maker)) return;
         map[maker] = addUnique(map[maker], model);
-        if (part) {
+        if (part && !isDeletedCandidate("items.part", part, maker, model)) {
           const key = makerModelKey(maker, model);
           partMap[key] = addUnique(partMap[key], part);
         }
@@ -1519,6 +1533,10 @@
         const part = String(row.part || "").trim();
         const partNo = String(row.part_no || "").trim();
         if (!model || !part || !partNo) return;
+        if (isDeletedCandidate("items.maker", maker)) return;
+        if (isDeletedCandidate("items.model", model, maker)) return;
+        if (isDeletedCandidate("items.part", part, maker, model)) return;
+        if (isDeletedCandidate("items.part_no", partNo, maker, model)) return;
         if (maker) map[partNumberKey(maker, model, part)] = partNo;
         map[partMapKey(model, part)] = partNo;
       });
@@ -1553,8 +1571,12 @@
     }
 
     function partNumberForRow(maker, model, part) {
+      if (isDeletedCandidate("items.maker", maker)) return "";
+      if (isDeletedCandidate("items.model", model, maker)) return "";
+      if (isDeletedCandidate("items.part", part, maker, model)) return "";
       const map = readPartNumberMap();
-      return map[partNumberKey(maker, model, part)] || map[partMapKey(model, part)] || "";
+      const partNo = map[partNumberKey(maker, model, part)] || map[partMapKey(model, part)] || "";
+      return isDeletedCandidate("items.part_no", partNo, maker, model) ? "" : partNo;
     }
 
     function fillPartNumberForPartInput(input, force = false) {
@@ -1587,8 +1609,8 @@
         const partNo = partNumberForRow(maker, model, part);
         scoped = partNo ? [partNo] : [];
       }
-      const visibleScoped = scoped.filter((item) => !isDeletedCandidate(normalizedKey, item, maker, model));
-      const visibleHistory = history.filter((item) => !isDeletedCandidate(normalizedKey, item, maker, model));
+      const visibleScoped = visibleCandidateValues(normalizedKey, scoped, maker, model);
+      const visibleHistory = visibleCandidateValues(normalizedKey, history, maker, model);
       return filterSuggestions([...visibleScoped, ...visibleHistory], typed);
     }
 
@@ -1670,9 +1692,17 @@
       const candidateValue = String(candidateText?.value || "").trim();
       const partMaker = candidateAddMakerValue();
       const partModel = candidateAddModelValue();
+      const candidateIsBlocked = candidateAddMode === "maker"
+        ? isDeletedCandidate("items.maker", candidateValue)
+        : candidateAddMode === "part" && (
+          isDeletedCandidate("items.maker", partMaker) ||
+          isDeletedCandidate("items.model", partModel, partMaker) ||
+          isDeletedCandidate("items.part", candidateValue, partMaker, partModel) ||
+          isDeletedCandidate("items.part_no", String(candidatePartNoText?.value || "").trim(), partMaker, partModel)
+        );
       if (addBtn) addBtn.disabled = candidateAddMode === "part"
-        ? !(candidateValue && partMaker && partModel)
-        : !(candidateAddMode === "maker" && candidateValue);
+        ? !(candidateValue && partMaker && partModel) || candidateIsBlocked
+        : !(candidateAddMode === "maker" && candidateValue) || candidateIsBlocked;
       if (clearBtn) clearBtn.disabled = !String(searchInput?.value || "").trim();
       const canBulkAdd = Boolean(activeCandidateMaker && activeCandidateModel && selectedCount > 0);
       if (!canBulkAdd) candidateBulkAddConfirm = false;
@@ -1688,9 +1718,8 @@
       const target = document.getElementById("candidateList");
       const history = readHistory();
       const values = history[activeCandidateKey] || [];
-      const rows = values
+      const rows = visibleCandidateValues(activeCandidateKey, values)
         .map((value) => ({ key: activeCandidateKey, value }))
-        .filter((row) => !isDeletedCandidate(row.key, row.value))
         .filter((row) => matchesCandidateSearch([candidateLabel(row.key), row.value]));
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
@@ -1737,10 +1766,10 @@
       selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
       resetCandidateAddPanel();
-      const models = (readMakerModelMap()[maker] || []).filter((model) =>
-        !isDeletedCandidate("items.model", model, maker) &&
-        matchesCandidateSearch([maker, model])
-      );
+      const models = isDeletedCandidate("items.maker", maker)
+        ? []
+        : visibleCandidateValues("items.model", readMakerModelMap()[maker] || [], maker)
+          .filter((model) => matchesCandidateSearch([maker, model]));
       activeCandidateKey = "items.model";
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
@@ -1776,10 +1805,10 @@
       selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
       resetCandidateAddPanel();
-      const parts = (readMakerModelPartMap()[makerModelKey(maker, model)] || []).filter((part) =>
-        !isDeletedCandidate("items.part", part, maker, model) &&
-        matchesCandidateSearch([maker, model, part, partNumberForRow(maker, model, part)])
-      );
+      const parts = isDeletedCandidate("items.maker", maker) || isDeletedCandidate("items.model", model, maker)
+        ? []
+        : visibleCandidateValues("items.part", readMakerModelPartMap()[makerModelKey(maker, model)] || [], maker, model)
+          .filter((part) => matchesCandidateSearch([maker, model, part, partNumberForRow(maker, model, part)]));
       activeCandidateKey = "items.part";
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
@@ -1829,12 +1858,17 @@
     }
 
     function addCandidatePartsToEstimate(maker, model, parts) {
+      if (isDeletedCandidate("items.maker", maker) || isDeletedCandidate("items.model", model, maker)) return;
       const selectedParts = parts
         .map((item) => ({
           part: String(item.part || "").trim(),
           partNo: String(item.partNo || "").trim(),
         }))
-        .filter((item) => item.part);
+        .filter((item) =>
+          item.part &&
+          !isDeletedCandidate("items.part", item.part, maker, model) &&
+          !isDeletedCandidate("items.part_no", item.partNo, maker, model)
+        );
       if (!selectedParts.length) return;
       rememberUndoState();
       const rows = valuesToRows(collect());
@@ -1909,7 +1943,7 @@
         fillSelect(modelSelect, [], "__new__", "新規型式");
         modelSelect.value = "__new__";
       } else {
-        const models = readMakerModelMap()[maker] || [];
+        const models = visibleCandidateValues("items.model", readMakerModelMap()[maker] || [], maker);
         fillSelect(modelSelect, models, activeCandidateMaker === maker ? activeCandidateModel : models[0], "新規型式");
       }
       newModel.hidden = modelSelect.value !== "__new__";
@@ -2067,6 +2101,7 @@
       const partNo = document.getElementById("candidatePartNoText").value.trim();
       const wasPartMode = candidateAddMode === "part";
       if (candidateAddMode === "maker") {
+        if (isDeletedCandidate("items.maker", value)) return;
         rememberValue("items.maker", value);
         activeCandidateKey = "items.maker";
       }
@@ -2074,6 +2109,10 @@
         const maker = candidateAddMakerValue();
         const model = candidateAddModelValue();
         if (!maker || !model) return;
+        if (isDeletedCandidate("items.maker", maker)) return;
+        if (isDeletedCandidate("items.model", model, maker)) return;
+        if (isDeletedCandidate("items.part", value, maker, model)) return;
+        if (isDeletedCandidate("items.part_no", partNo, maker, model)) return;
         rememberValue("items.maker", maker);
         const modelMap = readMakerModelMap();
         modelMap[maker] = addUnique(modelMap[maker], model);
