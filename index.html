@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="mitsumori-app-version" content="2026-06-30-3">
+  <meta name="mitsumori-app-version" content="2026-06-30-4">
   <title>見積依頼書</title>
   <style>
     :root {
@@ -889,8 +889,7 @@
     const MAKER_MODEL_PART_KEY = "mitsumori_irai_maker_model_part_map_v1";
     const CANDIDATE_TRASH_KEY = "mitsumori_irai_candidate_trash_v1";
     const CANDIDATE_PURGED_KEY = "mitsumori_irai_candidate_purged_v1";
-    const APP_VERSION = "2026-06-30-3";
-    const MODEL_TYPE_OPTIONS = ["ホイスト", "サドル"];
+    const APP_VERSION = "2026-06-30-4";
     const SUPABASE_URL = "https://tkhcbtcvtzkruporhnhw.supabase.co";
     const SUPABASE_KEY = "sb_publishable_BjUiMlNsWkuEFSlhLNf-Yg_QBhEe87N";
     const CLOUD_TABLE = "mitsumori_app_state";
@@ -1601,8 +1600,9 @@
       const history = readHistory()[normalizedKey] || [];
       const { maker, model, part } = rowContextFromKey(key);
       let scoped = [];
-      if (normalizedKey === "items.model" && maker) {
-        scoped = [...MODEL_TYPE_OPTIONS, ...(readMakerModelMap()[maker] || [])];
+      if (normalizedKey === "items.model") {
+        if (!maker) return [];
+        scoped = readMakerModelMap()[maker] || [];
       }
       if (normalizedKey === "items.part" && maker && model) {
         scoped = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
@@ -1612,7 +1612,7 @@
         scoped = partNo ? [partNo] : [];
       }
       const contextScoped =
-        (normalizedKey === "items.model" && maker) ||
+        normalizedKey === "items.model" ||
         (normalizedKey === "items.part" && maker && model) ||
         (normalizedKey === "items.part_no" && model && part);
       const visibleScoped = visibleCandidateValues(normalizedKey, scoped, maker, model);
