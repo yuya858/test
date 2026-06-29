@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="mitsumori-app-version" content="2026-06-29-1">
   <title>見積依頼書</title>
   <style>
     :root {
@@ -793,14 +797,10 @@
         </div>
         <div id="makerCandidateTabs" hidden></div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-          <button id="candidateMenuBtn" type="button">候補</button>
+          <button id="candidateAddStartBtn" type="button">候補の追加</button>
           <button id="candidateBulkAddBtn" type="button" disabled>見積追加</button>
           <button id="candidateEditSelectedBtn" type="button" disabled>編集</button>
           <button class="danger" id="candidateDeleteSelectedBtn" type="button" disabled>削除</button>
-        </div>
-        <div id="candidateMenu" hidden style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-          <button id="candidateAddStartBtn" type="button">候補の追加</button>
-          <button id="candidateShowListBtn" type="button">候補一覧</button>
         </div>
         <div id="candidateAddPanel" hidden style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
           <span style="font-weight:600;">部品名/部品番号</span>
@@ -882,6 +882,8 @@
     const MAKER_MODEL_KEY = "mitsumori_irai_maker_model_map_v1";
     const MAKER_MODEL_PART_KEY = "mitsumori_irai_maker_model_part_map_v1";
     const CANDIDATE_TRASH_KEY = "mitsumori_irai_candidate_trash_v1";
+    const APP_VERSION = "2026-06-29-1";
+    const MODEL_TYPE_OPTIONS = ["ホイスト", "サドル"];
     const SUPABASE_URL = "https://tkhcbtcvtzkruporhnhw.supabase.co";
     const SUPABASE_KEY = "sb_publishable_BjUiMlNsWkuEFSlhLNf-Yg_QBhEe87N";
     const CLOUD_TABLE = "mitsumori_app_state";
@@ -959,15 +961,27 @@
     function rowsWithEffectiveContext(rows) {
       let currentPlace = "";
       let currentMaker = "";
+      let currentModel = "";
       return rows.map((row) => {
         const place = String(row.place || "").trim();
         const maker = String(row.maker || "").trim();
+        const model = String(row.model || "").trim();
         if (place && place !== currentPlace) {
           currentPlace = place;
           currentMaker = "";
+          currentModel = "";
         }
-        if (maker) currentMaker = maker;
-        return { ...row, effectivePlace: place || currentPlace, effectiveMaker: maker || currentMaker };
+        if (maker && maker !== currentMaker) {
+          currentMaker = maker;
+          currentModel = "";
+        }
+        if (model) currentModel = model;
+        return {
+          ...row,
+          effectivePlace: place || currentPlace,
+          effectiveMaker: maker || currentMaker,
+          effectiveModel: model || currentModel,
+        };
       });
     }
 
@@ -987,12 +1001,18 @@
         );
         const noMakerRows = filled.filter((row) => !String(row.effectiveMaker || row.maker || "").trim());
         let previousMaker = "";
+        let previousModel = "";
         return [...makerRows, ...noMakerRows].map((row) => {
           const maker = String(row.effectiveMaker || row.maker || "").trim();
+          const model = String(row.effectiveModel || row.model || "").trim();
           const displayMaker = maker && maker === previousMaker ? "" : maker;
-          if (maker) previousMaker = maker;
-          const { effectivePlace, effectiveMaker, ...cleanRow } = row;
-          return { ...cleanRow, maker: displayMaker };
+          const displayModel = maker && maker === previousMaker && model === previousModel ? "" : model;
+          if (maker) {
+            previousMaker = maker;
+            previousModel = model;
+          }
+          const { effectivePlace, effectiveMaker, effectiveModel, ...cleanRow } = row;
+          return { ...cleanRow, maker: displayMaker, model: displayModel };
         }).concat(Array.from({ length: emptyCount }, () => ({})));
       };
 
@@ -1029,10 +1049,10 @@
 
     function firstMissingMakerPlace() {
       const rows = valuesToRows(collect());
-      const row = rows.find((item) =>
+      const row = rowsWithEffectiveContext(rows).find((item) =>
         String(item.place || "").trim() &&
         rowHasContent(item) &&
-        !String(item.maker || "").trim()
+        !String(item.effectiveMaker || item.maker || "").trim()
       );
       return row ? String(row.place || "").trim() : "";
     }
@@ -1173,6 +1193,7 @@
         localStorage.setItem(key, JSON.stringify(data[key] ?? (key === HISTORY_KEY || key === PART_NUMBER_KEY || key === MAKER_MODEL_KEY || key === MAKER_MODEL_PART_KEY ? {} : [])));
       });
       cloudSyncPaused = false;
+      sanitizeDeletedCandidatesFromLocal();
     }
 
     async function loadCloudState() {
@@ -1230,6 +1251,105 @@
       const text = String(value || "").trim();
       if (!text) return list || [];
       return [text, ...(list || []).filter((item) => item !== text)].slice(0, 80);
+    }
+
+    function deletedCandidateMatches(item, key, value, maker = "", model = "") {
+      const text = String(value || "").trim();
+      if (!item || !text) return false;
+      const itemValue = String(item.value || "").trim();
+      const itemMaker = String(item.maker || "").trim();
+      const itemModel = String(item.model || "").trim();
+      const targetMaker = String(maker || "").trim();
+      const targetModel = String(model || "").trim();
+      if (key === "items.part_no" && String(item.partNo || "").trim() === text) return true;
+      if (item.key === key && itemValue === text) return true;
+      if (item.type === "makerModel") {
+        return key === "items.model" && itemValue === text && (!targetMaker || itemMaker === targetMaker);
+      }
+      if (item.type === "makerModelPart") {
+        return key === "items.part" && itemValue === text &&
+          (!targetMaker || itemMaker === targetMaker) &&
+          (!targetModel || itemModel === targetModel);
+      }
+      if (item.type === "makerModelParts") {
+        return key === "items.part" && (item.values || []).includes(text) &&
+          (!targetMaker || itemMaker === targetMaker) &&
+          (!targetModel || itemModel === targetModel);
+      }
+      return false;
+    }
+
+    function isDeletedCandidate(key, value, maker = "", model = "") {
+      return readList(CANDIDATE_TRASH_KEY).some((item) =>
+        deletedCandidateMatches(item, key, value, maker, model)
+      );
+    }
+
+    function isDeletedMaker(maker) {
+      return isDeletedCandidate("items.maker", maker);
+    }
+
+    function sanitizeDeletedCandidatesFromLocal() {
+      const trash = readList(CANDIDATE_TRASH_KEY);
+      if (!trash.length) return;
+
+      const history = readHistory();
+      Object.keys(history).forEach((key) => {
+        history[key] = (history[key] || []).filter((value) =>
+          !trash.some((item) => deletedCandidateMatches(item, key, value))
+        );
+      });
+      writeHistory(history);
+
+      const modelMap = readMakerModelMap();
+      Object.keys(modelMap).forEach((maker) => {
+        if (isDeletedMaker(maker)) {
+          delete modelMap[maker];
+          return;
+        }
+        modelMap[maker] = (modelMap[maker] || []).filter((model) =>
+          !trash.some((item) => deletedCandidateMatches(item, "items.model", model, maker))
+        );
+      });
+      writeMakerModelMap(modelMap);
+
+      const partMap = readMakerModelPartMap();
+      Object.keys(partMap).forEach((key) => {
+        const [maker, model] = key.split("|||");
+        if (isDeletedMaker(maker) || isDeletedCandidate("items.model", model, maker)) {
+          delete partMap[key];
+          return;
+        }
+        partMap[key] = (partMap[key] || []).filter((part) =>
+          !trash.some((item) => deletedCandidateMatches(item, "items.part", part, maker, model))
+        );
+      });
+      writeMakerModelPartMap(partMap);
+
+      const numberMap = readPartNumberMap();
+      Object.keys(numberMap).forEach((key) => {
+        const parts = key.split("|||");
+        if (parts.length === 3) {
+          const [maker, model, part] = parts;
+          if (
+            isDeletedMaker(maker) ||
+            isDeletedCandidate("items.model", model, maker) ||
+            isDeletedCandidate("items.part", part, maker, model)
+          ) {
+            delete numberMap[key];
+          }
+        }
+        if (parts.length === 2) {
+          const [model, part] = parts;
+          if (
+            trash.some((item) => deletedCandidateMatches(item, "items.model", model)) ||
+            trash.some((item) => deletedCandidateMatches(item, "items.part", part))
+          ) {
+            delete numberMap[key];
+          }
+        }
+      });
+      writePartNumberMap(numberMap);
     }
 
     function historyKey(rawKey) {
@@ -1331,7 +1451,7 @@
       const partMap = readMakerModelPartMap();
       rowsWithEffectiveContext(valuesToRows(data)).forEach((row) => {
         const maker = String(row.effectiveMaker || row.maker || "").trim();
-        const model = String(row.model || "").trim();
+        const model = String(row.effectiveModel || row.model || "").trim();
         const part = String(row.part || "").trim();
         if (!maker || !model) return;
         map[maker] = addUnique(map[maker], model);
@@ -1348,7 +1468,7 @@
       const map = readPartNumberMap();
       rowsWithEffectiveContext(valuesToRows(data)).forEach((row) => {
         const maker = String(row.effectiveMaker || row.maker || "").trim();
-        const model = String(row.model || "").trim();
+        const model = String(row.effectiveModel || row.model || "").trim();
         const part = String(row.part || "").trim();
         const partNo = String(row.part_no || "").trim();
         if (!model || !part || !partNo) return;
@@ -1366,26 +1486,13 @@
     function rowContextFromKey(key) {
       const index = rowIndexFromKey(key);
       if (index === null) return { index: null, maker: "", model: "", part: "" };
-      let place = document.querySelector(`[data-key="items.${index}.place"]`)?.value.trim() || "";
-      let maker = document.querySelector(`[data-key="items.${index}.maker"]`)?.value.trim() || "";
-      if (!maker) {
-        for (let i = index - 1; i >= 0; i -= 1) {
-          const previousPlace = document.querySelector(`[data-key="items.${i}.place"]`)?.value.trim() || "";
-          if (!place && previousPlace) place = previousPlace;
-          if (place && previousPlace && previousPlace !== place) break;
-          const previousMaker = document.querySelector(`[data-key="items.${i}.maker"]`)?.value.trim() || "";
-          if (previousMaker) {
-            maker = previousMaker;
-            break;
-          }
-        }
-      }
+      const row = rowsWithEffectiveContext(valuesToRows(collect()))[index] || {};
       return {
         index,
-        place,
-        maker,
-        model: document.querySelector(`[data-key="items.${index}.model"]`)?.value.trim() || "",
-        part: document.querySelector(`[data-key="items.${index}.part"]`)?.value.trim() || "",
+        place: String(row.effectivePlace || row.place || "").trim(),
+        maker: String(row.effectiveMaker || row.maker || "").trim(),
+        model: String(row.effectiveModel || row.model || "").trim(),
+        part: String(row.part || "").trim(),
       };
     }
 
@@ -1424,7 +1531,7 @@
       const { maker, model, part } = rowContextFromKey(key);
       let scoped = [];
       if (normalizedKey === "items.model" && maker) {
-        scoped = readMakerModelMap()[maker] || [];
+        scoped = [...MODEL_TYPE_OPTIONS, ...(readMakerModelMap()[maker] || [])];
       }
       if (normalizedKey === "items.part" && maker && model) {
         scoped = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
@@ -1433,7 +1540,9 @@
         const partNo = partNumberForRow(maker, model, part);
         scoped = partNo ? [partNo] : [];
       }
-      return filterSuggestions([...scoped, ...history], typed);
+      const visibleScoped = scoped.filter((item) => !isDeletedCandidate(normalizedKey, item, maker, model));
+      const visibleHistory = history.filter((item) => !isDeletedCandidate(normalizedKey, item, maker, model));
+      return filterSuggestions([...visibleScoped, ...visibleHistory], typed);
     }
 
     function showSuggestions(input) {
@@ -1448,13 +1557,11 @@
       ).join("");
       box.hidden = false;
       box.dataset.targetKey = input.dataset.key;
-      fitMobileSheet();
     }
 
     function hideSuggestions() {
       const box = document.getElementById("suggestBox");
       box.hidden = true;
-      fitMobileSheet();
     }
 
     function chooseSuggestion(button) {
@@ -1536,6 +1643,7 @@
       const values = history[activeCandidateKey] || [];
       const rows = values
         .map((value) => ({ key: activeCandidateKey, value }))
+        .filter((row) => !isDeletedCandidate(row.key, row.value))
         .filter((row) => matchesCandidateSearch([candidateLabel(row.key), row.value]));
       document.querySelectorAll("[data-candidate-key]").forEach((button) => {
         button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
@@ -1546,6 +1654,7 @@
       selectedCandidateParts.clear();
       selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
+      resetCandidateAddPanel();
       updateCandidateContext();
       updateCandidateActionButtons();
       updateCandidateBackButton();
@@ -1580,7 +1689,9 @@
       selectedCandidateParts.clear();
       selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
+      resetCandidateAddPanel();
       const models = (readMakerModelMap()[maker] || []).filter((model) =>
+        !isDeletedCandidate("items.model", model, maker) &&
         matchesCandidateSearch([maker, model])
       );
       activeCandidateKey = "items.model";
@@ -1617,7 +1728,9 @@
       selectedCandidateParts.clear();
       selectedCandidateItem = null;
       candidateBulkAddConfirm = false;
+      resetCandidateAddPanel();
       const parts = (readMakerModelPartMap()[makerModelKey(maker, model)] || []).filter((part) =>
+        !isDeletedCandidate("items.part", part, maker, model) &&
         matchesCandidateSearch([maker, model, part, partNumberForRow(maker, model, part)])
       );
       activeCandidateKey = "items.part";
@@ -1709,7 +1822,8 @@
     function candidateMakerOptions() {
       const history = readHistory();
       const map = readMakerModelMap();
-      return mergeUniqueText(history["items.maker"] || [], Object.keys(map));
+      return mergeUniqueText(history["items.maker"] || [], Object.keys(map))
+        .filter((maker) => !isDeletedCandidate("items.maker", maker));
     }
 
     function fillSelect(select, values, selectedValue, newLabel) {
@@ -1782,7 +1896,6 @@
     function openCandidateAddPanel() {
       const panel = document.getElementById("candidateAddPanel");
       panel.hidden = false;
-      document.getElementById("candidateMenu").hidden = true;
       document.getElementById("candidateText").value = "";
       document.getElementById("candidatePartNoText").value = "";
       document.getElementById("candidateNewMakerText").value = "";
@@ -1982,21 +2095,24 @@
     function editMakerModelPart(maker, model, oldPart) {
       const nextPart = prompt("部品名を編集", oldPart);
       const text = String(nextPart || "").trim();
-      if (!text || text === oldPart) return;
+      if (!text) return;
+      const oldPartNo = partNumberForRow(maker, model, oldPart);
+      const nextPartNo = prompt("部品番号を編集（空白でもOK）", oldPartNo);
+      if (nextPartNo === null) return;
+      const partNoText = String(nextPartNo || "").trim();
+      if (text === oldPart && partNoText === oldPartNo) return;
       const partMap = readMakerModelPartMap();
       const key = makerModelKey(maker, model);
-      partMap[key] = (partMap[key] || []).map((item) => item === oldPart ? text : item);
+      partMap[key] = addUnique((partMap[key] || []).filter((item) => item !== oldPart), text);
       writeMakerModelPartMap(partMap);
       const numberMap = readPartNumberMap();
       const makerNumberKey = partNumberKey(maker, model, oldPart);
       const oldNumberKey = partMapKey(model, oldPart);
-      if (numberMap[makerNumberKey]) {
-        numberMap[partNumberKey(maker, model, text)] = numberMap[makerNumberKey];
-        delete numberMap[makerNumberKey];
-      }
-      if (numberMap[oldNumberKey]) {
-        numberMap[partMapKey(model, text)] = numberMap[oldNumberKey];
-        delete numberMap[oldNumberKey];
+      delete numberMap[makerNumberKey];
+      delete numberMap[oldNumberKey];
+      if (partNoText) {
+        numberMap[partNumberKey(maker, model, text)] = partNoText;
+        numberMap[partMapKey(model, text)] = partNoText;
       }
       writePartNumberMap(numberMap);
       showPartsForMakerModel(maker, model, false);
@@ -2051,6 +2167,7 @@
         });
         writeList(CANDIDATE_TRASH_KEY, trash);
         forgetValue(pendingCandidateDelete.key, pendingCandidateDelete.value);
+        sanitizeDeletedCandidatesFromLocal();
         renderCandidateList();
       }
       closeCandidateDeleteConfirm();
@@ -2060,6 +2177,11 @@
       const map = readMakerModelMap();
       map[maker] = (map[maker] || []).filter((item) => item !== model);
       writeMakerModelMap(map);
+      const deletedParts = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
+      deletedParts.forEach((part) => {
+        const partNo = partNumberForRow(maker, model, part);
+        if (partNo) forgetValue("items.part_no", partNo);
+      });
       const trash = readList(CANDIDATE_TRASH_KEY);
       trash.unshift({
         type: "makerModel",
@@ -2070,6 +2192,7 @@
         deletedAt: nowText(),
       });
       writeList(CANDIDATE_TRASH_KEY, trash);
+      sanitizeDeletedCandidatesFromLocal();
       showModelsForMaker(maker);
     }
 
@@ -2078,34 +2201,54 @@
       const key = makerModelKey(maker, model);
       map[key] = (map[key] || []).filter((item) => item !== part);
       writeMakerModelPartMap(map);
+      const numberMap = readPartNumberMap();
+      const partNo = partNumberForRow(maker, model, part);
+      delete numberMap[partNumberKey(maker, model, part)];
+      delete numberMap[partMapKey(model, part)];
+      writePartNumberMap(numberMap);
+      if (partNo) forgetValue("items.part_no", partNo);
       const trash = readList(CANDIDATE_TRASH_KEY);
       trash.unshift({
         type: "makerModelPart",
         maker,
         model,
+        partNo,
         key: "items.part",
         value: part,
         label: `部品名（${maker} / ${model}）`,
         deletedAt: nowText(),
       });
       writeList(CANDIDATE_TRASH_KEY, trash);
+      sanitizeDeletedCandidatesFromLocal();
       showPartsForMakerModel(maker, model);
     }
 
     function deleteMakerModelParts(maker, model, parts) {
       const values = (parts || []).map((part) => String(part || "").trim()).filter(Boolean);
       if (!values.length) return;
+      const deletedItems = values.map((part) => ({
+        part,
+        partNo: partNumberForRow(maker, model, part),
+      }));
       const map = readMakerModelPartMap();
       const key = makerModelKey(maker, model);
       const valueSet = new Set(values);
       map[key] = (map[key] || []).filter((item) => !valueSet.has(item));
       writeMakerModelPartMap(map);
+      const numberMap = readPartNumberMap();
+      deletedItems.forEach(({ part, partNo }) => {
+        delete numberMap[partNumberKey(maker, model, part)];
+        delete numberMap[partMapKey(model, part)];
+        if (partNo) forgetValue("items.part_no", partNo);
+      });
+      writePartNumberMap(numberMap);
       const trash = readList(CANDIDATE_TRASH_KEY);
-      values.forEach((part) => {
+      deletedItems.forEach(({ part, partNo }) => {
         trash.unshift({
           type: "makerModelPart",
           maker,
           model,
+          partNo,
           key: "items.part",
           value: part,
           label: `部品名（${maker} / ${model}）`,
@@ -2113,6 +2256,7 @@
         });
       });
       writeList(CANDIDATE_TRASH_KEY, trash);
+      sanitizeDeletedCandidatesFromLocal();
       selectedCandidateParts.clear();
       showPartsForMakerModel(maker, model);
     }
@@ -2259,6 +2403,7 @@
 
     function showView(name) {
       if (name !== "estimate") saveCurrentDraft();
+      if (name !== "estimate") hideSuggestions();
       document.querySelectorAll(".view").forEach((view) => { view.hidden = true; });
       document.getElementById(`${name}View`).hidden = false;
       document.querySelectorAll("[data-view-button]").forEach((button) => {
@@ -2428,6 +2573,9 @@
     }
 
     function fitMobileSheet() {
+      const viewportScale = window.visualViewport?.scale || 1;
+      const activeElement = document.activeElement;
+      if (Math.abs(viewportScale - 1) > 0.02 || activeElement?.matches?.("#estimateView [data-key]")) return;
       const estimateView = document.getElementById("estimateView");
       const sheet = document.getElementById("sheet");
       const wrap = document.querySelector(".wrap");
@@ -2455,6 +2603,34 @@
       estimateView.style.minHeight = `${Math.ceil(sheet.scrollHeight * scale)}px`;
       wrap.style.overflowX = isLandscape ? "hidden" : "auto";
       wrap.style.overflowY = "auto";
+    }
+
+    async function checkForAppUpdate() {
+      if (!/^https?:$/.test(location.protocol)) return;
+      try {
+        const url = `${location.origin}${location.pathname}?_update=${Date.now()}`;
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return;
+        const html = await res.text();
+        const match = html.match(/<meta name="mitsumori-app-version" content="([^"]+)"/);
+        if (!match || match[1] === APP_VERSION) return;
+        document.open();
+        document.write(html);
+        document.close();
+        history.replaceState(null, "", `${location.pathname}${location.search || ""}`);
+      } catch (error) {
+        console.warn("App update check failed:", error);
+      }
+    }
+
+    function installAutoUpdateCheck() {
+      if (!/^https?:$/.test(location.protocol)) return;
+      setTimeout(checkForAppUpdate, 1500);
+      window.addEventListener("focus", checkForAppUpdate);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) checkForAppUpdate();
+      });
+      setInterval(checkForAppUpdate, 5 * 60 * 1000);
     }
 
     function openClearConfirm() {
@@ -2602,7 +2778,6 @@
       updatePrimaryButtons();
       if (event.target.matches("[data-key]")) {
         activeInput = event.target;
-        moveCaretToEnd(event.target);
         showSuggestions(event.target);
         fillPartNumberForPartInput(event.target);
       }
@@ -2612,7 +2787,7 @@
       if (event.target.matches("[data-key]")) {
         rememberUndoState();
         activeInput = event.target;
-        hideSuggestions();
+        showSuggestions(event.target);
       }
     });
 
@@ -2620,7 +2795,7 @@
       setTimeout(() => {
         const box = document.getElementById("suggestBox");
         if (box.matches(":hover") || box.contains(document.activeElement)) return;
-        hideSuggestions();
+        if (document.activeElement?.matches?.("#estimateView [data-key]")) return;
       }, 800);
     });
 
@@ -2644,16 +2819,7 @@
       chooseSuggestion(button);
     });
 
-    document.getElementById("candidateMenuBtn").addEventListener("click", () => {
-      const menu = document.getElementById("candidateMenu");
-      menu.hidden = !menu.hidden;
-    });
     document.getElementById("candidateAddStartBtn").addEventListener("click", openCandidateAddPanel);
-    document.getElementById("candidateShowListBtn").addEventListener("click", () => {
-      resetCandidateAddPanel();
-      document.getElementById("candidateMenu").hidden = true;
-      refreshCandidateView();
-    });
     document.getElementById("candidateAddCancelBtn").addEventListener("click", resetCandidateAddPanel);
     document.getElementById("candidateAddBtn").addEventListener("click", addCandidateFromList);
     document.getElementById("candidateText").addEventListener("input", updateCandidateActionButtons);
@@ -2766,6 +2932,7 @@
       fitPrintRows();
       updatePrimaryButtons();
       updateUndoButton();
+      installAutoUpdateCheck();
       window.addEventListener("resize", fitMobileSheet);
       window.addEventListener("orientationchange", fitMobileSheet);
     }
