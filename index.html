@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="mitsumori-app-version" content="2026-06-29-1">
+  <meta name="mitsumori-app-version" content="2026-06-29-2">
   <title>見積依頼書</title>
   <style>
     :root {
@@ -144,6 +144,12 @@
 
     .candidate-title h2 {
       margin: 0;
+    }
+
+    #candidateMenu,
+    #candidateMenuBtn,
+    #candidateShowListBtn {
+      display: none !important;
     }
 
     .candidate-context {
@@ -882,7 +888,7 @@
     const MAKER_MODEL_KEY = "mitsumori_irai_maker_model_map_v1";
     const MAKER_MODEL_PART_KEY = "mitsumori_irai_maker_model_part_map_v1";
     const CANDIDATE_TRASH_KEY = "mitsumori_irai_candidate_trash_v1";
-    const APP_VERSION = "2026-06-29-1";
+    const APP_VERSION = "2026-06-29-2";
     const MODEL_TYPE_OPTIONS = ["ホイスト", "サドル"];
     const SUPABASE_URL = "https://tkhcbtcvtzkruporhnhw.supabase.co";
     const SUPABASE_KEY = "sb_publishable_BjUiMlNsWkuEFSlhLNf-Yg_QBhEe87N";
