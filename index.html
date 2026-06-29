@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="mitsumori-app-version" content="2026-06-30-4">
+  <meta name="mitsumori-app-version" content="2026-06-30-5">
   <title>見積依頼書</title>
   <style>
     :root {
@@ -889,7 +889,7 @@
     const MAKER_MODEL_PART_KEY = "mitsumori_irai_maker_model_part_map_v1";
     const CANDIDATE_TRASH_KEY = "mitsumori_irai_candidate_trash_v1";
     const CANDIDATE_PURGED_KEY = "mitsumori_irai_candidate_purged_v1";
-    const APP_VERSION = "2026-06-30-4";
+    const APP_VERSION = "2026-06-30-5";
     const SUPABASE_URL = "https://tkhcbtcvtzkruporhnhw.supabase.co";
     const SUPABASE_KEY = "sb_publishable_BjUiMlNsWkuEFSlhLNf-Yg_QBhEe87N";
     const CLOUD_TABLE = "mitsumori_app_state";
@@ -1386,12 +1386,14 @@
       const numberMap = readPartNumberMap();
       Object.keys(numberMap).forEach((key) => {
         const parts = key.split("|||");
+        const partNo = String(numberMap[key] || "").trim();
         if (parts.length === 3) {
           const [maker, model, part] = parts;
           if (
             isDeletedMaker(maker) ||
             isDeletedCandidate("items.model", model, maker) ||
-            isDeletedCandidate("items.part", part, maker, model)
+            isDeletedCandidate("items.part", part, maker, model) ||
+            isDeletedCandidate("items.part_no", partNo, maker, model)
           ) {
             delete numberMap[key];
           }
@@ -1400,7 +1402,8 @@
           const [model, part] = parts;
           if (
             blocked.some((item) => deletedCandidateMatches(item, "items.model", model)) ||
-            blocked.some((item) => deletedCandidateMatches(item, "items.part", part))
+            blocked.some((item) => deletedCandidateMatches(item, "items.part", part)) ||
+            blocked.some((item) => deletedCandidateMatches(item, "items.part_no", partNo))
           ) {
             delete numberMap[key];
           }
@@ -1531,13 +1534,12 @@
         const model = String(row.effectiveModel || row.model || "").trim();
         const part = String(row.part || "").trim();
         const partNo = String(row.part_no || "").trim();
-        if (!model || !part || !partNo) return;
+        if (!maker || !model || !part || !partNo) return;
         if (isDeletedCandidate("items.maker", maker)) return;
         if (isDeletedCandidate("items.model", model, maker)) return;
         if (isDeletedCandidate("items.part", part, maker, model)) return;
         if (isDeletedCandidate("items.part_no", partNo, maker, model)) return;
-        if (maker) map[partNumberKey(maker, model, part)] = partNo;
-        map[partMapKey(model, part)] = partNo;
+        map[partNumberKey(maker, model, part)] = partNo;
       });
       writePartNumberMap(map);
     }
@@ -1570,14 +1572,16 @@
     }
 
     function partNumberForRow(maker, model, part) {
-      if (isDeletedCandidate("items.maker", maker)) return "";
-      if (isDeletedCandidate("items.model", model, maker)) return "";
-      if (isDeletedCandidate("items.part", part, maker, model)) return "";
+      const makerText = String(maker || "").trim();
+      const modelText = String(model || "").trim();
+      const partText = String(part || "").trim();
+      if (!makerText || !modelText || !partText) return "";
+      if (isDeletedCandidate("items.maker", makerText)) return "";
+      if (isDeletedCandidate("items.model", modelText, makerText)) return "";
+      if (isDeletedCandidate("items.part", partText, makerText, modelText)) return "";
       const map = readPartNumberMap();
-      const partNo = maker
-        ? map[partNumberKey(maker, model, part)] || ""
-        : map[partMapKey(model, part)] || "";
-      return isDeletedCandidate("items.part_no", partNo, maker, model) ? "" : partNo;
+      const partNo = map[partNumberKey(makerText, modelText, partText)] || "";
+      return isDeletedCandidate("items.part_no", partNo, makerText, modelText) ? "" : partNo;
     }
 
     function fillPartNumberForPartInput(input, force = false) {
@@ -1604,17 +1608,19 @@
         if (!maker) return [];
         scoped = readMakerModelMap()[maker] || [];
       }
-      if (normalizedKey === "items.part" && maker && model) {
+      if (normalizedKey === "items.part") {
+        if (!maker || !model) return [];
         scoped = readMakerModelPartMap()[makerModelKey(maker, model)] || [];
       }
-      if (normalizedKey === "items.part_no" && model && part) {
+      if (normalizedKey === "items.part_no") {
+        if (!maker || !model || !part) return [];
         const partNo = partNumberForRow(maker, model, part);
         scoped = partNo ? [partNo] : [];
       }
       const contextScoped =
         normalizedKey === "items.model" ||
-        (normalizedKey === "items.part" && maker && model) ||
-        (normalizedKey === "items.part_no" && model && part);
+        normalizedKey === "items.part" ||
+        normalizedKey === "items.part_no";
       const visibleScoped = visibleCandidateValues(normalizedKey, scoped, maker, model);
       const visibleHistory = contextScoped ? [] : visibleCandidateValues(normalizedKey, history, maker, model);
       return filterSuggestions([...visibleScoped, ...visibleHistory], typed);
@@ -2128,8 +2134,11 @@
         partMap[key] = addUnique(partMap[key], value);
         writeMakerModelPartMap(partMap);
         const numberMap = readPartNumberMap();
-        numberMap[partNumberKey(maker, model, value)] = partNo;
-        numberMap[partMapKey(model, value)] = partNo;
+        if (partNo) {
+          numberMap[partNumberKey(maker, model, value)] = partNo;
+        } else {
+          delete numberMap[partNumberKey(maker, model, value)];
+        }
         writePartNumberMap(numberMap);
         activeCandidateMaker = maker;
         activeCandidateModel = model;
@@ -2176,7 +2185,6 @@
           delete numberMap[key];
         }
         if (parts.length === 2 && parts[0] === oldModel) {
-          numberMap[partMapKey(text, parts[1])] = numberMap[key];
           delete numberMap[key];
         }
       });
@@ -2204,7 +2212,6 @@
       delete numberMap[oldNumberKey];
       if (partNoText) {
         numberMap[partNumberKey(maker, model, text)] = partNoText;
-        numberMap[partMapKey(model, text)] = partNoText;
       }
       writePartNumberMap(numberMap);
       showPartsForMakerModel(maker, model, false);
@@ -2603,6 +2610,7 @@
       const purged = addUnique(readList(CANDIDATE_PURGED_KEY), identity);
       writeList(CANDIDATE_PURGED_KEY, purged);
       writeList(CANDIDATE_TRASH_KEY, list.filter((candidate) => candidateTrashIdentity(candidate) !== identity));
+      sanitizeDeletedCandidatesFromLocal();
       renderRecordList("trash");
       saveCloudStateNow();
     }
