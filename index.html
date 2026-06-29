@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="mitsumori-app-version" content="2026-06-29-2">
+  <meta name="mitsumori-app-version" content="2026-06-30-1">
   <title>見積依頼書</title>
   <style>
     :root {
@@ -888,7 +888,8 @@
     const MAKER_MODEL_KEY = "mitsumori_irai_maker_model_map_v1";
     const MAKER_MODEL_PART_KEY = "mitsumori_irai_maker_model_part_map_v1";
     const CANDIDATE_TRASH_KEY = "mitsumori_irai_candidate_trash_v1";
-    const APP_VERSION = "2026-06-29-2";
+    const CANDIDATE_PURGED_KEY = "mitsumori_irai_candidate_purged_v1";
+    const APP_VERSION = "2026-06-30-1";
     const MODEL_TYPE_OPTIONS = ["ホイスト", "サドル"];
     const SUPABASE_URL = "https://tkhcbtcvtzkruporhnhw.supabase.co";
     const SUPABASE_KEY = "sb_publishable_BjUiMlNsWkuEFSlhLNf-Yg_QBhEe87N";
@@ -903,6 +904,7 @@
       MAKER_MODEL_KEY,
       MAKER_MODEL_PART_KEY,
       CANDIDATE_TRASH_KEY,
+      CANDIDATE_PURGED_KEY,
     ];
     const itemRows = document.getElementById("itemRows");
     const columns = ["place", "maker", "model", "serial", "part", "part_no", "qty", "cost", "price"];
@@ -1180,12 +1182,38 @@
       return merged;
     }
 
+    function candidateTrashIdentity(item) {
+      if (!item) return "";
+      return [
+        item.type || "",
+        item.key || "",
+        item.maker || "",
+        item.model || "",
+        item.value || "",
+        item.partNo || "",
+        item.label || "",
+      ].map((value) => String(value || "").trim()).join("|||");
+    }
+
+    function mergeCandidateTrash(localTrash = [], cloudTrash = [], purged = []) {
+      const purgedSet = new Set(purged);
+      const seen = new Set();
+      return [...cloudTrash, ...localTrash].filter((item) => {
+        const identity = candidateTrashIdentity(item);
+        if (!identity || purgedSet.has(identity) || seen.has(identity)) return false;
+        seen.add(identity);
+        return true;
+      }).slice(0, 200);
+    }
+
     function mergeCloudState(localData, cloudData) {
+      const purgedCandidates = mergeUniqueText(localData[CANDIDATE_PURGED_KEY] || [], cloudData[CANDIDATE_PURGED_KEY] || []);
       return {
         [STORAGE_KEY]: mergeUniqueById(localData[STORAGE_KEY] || [], cloudData[STORAGE_KEY] || []),
         [DRAFT_KEY]: mergeUniqueById(localData[DRAFT_KEY] || [], cloudData[DRAFT_KEY] || []),
         [TRASH_KEY]: mergeUniqueById(localData[TRASH_KEY] || [], cloudData[TRASH_KEY] || []),
-        [CANDIDATE_TRASH_KEY]: [...(cloudData[CANDIDATE_TRASH_KEY] || []), ...(localData[CANDIDATE_TRASH_KEY] || [])].slice(0, 200),
+        [CANDIDATE_TRASH_KEY]: mergeCandidateTrash(localData[CANDIDATE_TRASH_KEY] || [], cloudData[CANDIDATE_TRASH_KEY] || [], purgedCandidates),
+        [CANDIDATE_PURGED_KEY]: purgedCandidates,
         [HISTORY_KEY]: mergeHistory(localData[HISTORY_KEY] || {}, cloudData[HISTORY_KEY] || {}),
         [PART_NUMBER_KEY]: { ...(cloudData[PART_NUMBER_KEY] || {}), ...(localData[PART_NUMBER_KEY] || {}) },
         [MAKER_MODEL_KEY]: mergeObjectLists(localData[MAKER_MODEL_KEY] || {}, cloudData[MAKER_MODEL_KEY] || {}),
@@ -1286,9 +1314,22 @@
     }
 
     function isDeletedCandidate(key, value, maker = "", model = "") {
-      return readList(CANDIDATE_TRASH_KEY).some((item) =>
+      const trash = readList(CANDIDATE_TRASH_KEY);
+      const purged = readList(CANDIDATE_PURGED_KEY).map((identity) => ({ identity }));
+      return trash.some((item) =>
         deletedCandidateMatches(item, key, value, maker, model)
-      );
+      ) || purged.some((item) => {
+        const parts = String(item.identity || "").split("|||");
+        return deletedCandidateMatches({
+          type: parts[0],
+          key: parts[1],
+          maker: parts[2],
+          model: parts[3],
+          value: parts[4],
+          partNo: parts[5],
+          label: parts[6],
+        }, key, value, maker, model);
+      });
     }
 
     function isDeletedMaker(maker) {
@@ -2511,9 +2552,14 @@
 
     function deleteCandidateForever(index) {
       const list = readList(CANDIDATE_TRASH_KEY);
-      list.splice(Number(index), 1);
-      writeList(CANDIDATE_TRASH_KEY, list);
+      const item = list[Number(index)];
+      if (!item) return;
+      const identity = candidateTrashIdentity(item);
+      const purged = addUnique(readList(CANDIDATE_PURGED_KEY), identity);
+      writeList(CANDIDATE_PURGED_KEY, purged);
+      writeList(CANDIDATE_TRASH_KEY, list.filter((candidate) => candidateTrashIdentity(candidate) !== identity));
       renderRecordList("trash");
+      saveCloudStateNow();
     }
 
     function candidateTrashContext(item) {
