@@ -286,9 +286,12 @@ td, th {
 .top td { height: 30px; }
 
 .entry {
+  -webkit-appearance: none;
+  appearance: none;
   display: block;
   width: 100%;
   height: 100%;
+  min-width: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -395,6 +398,10 @@ textarea.entry {
 .label { font-size: 12px; }
 .items th { height: 29px; font-size: 12px; }
 .items td { height: 32px; }
+.items input.entry {
+  line-height: normal;
+  padding: 1px 3px;
+}
 .notes { height: 112px; }
 
 .notes-box {
@@ -499,6 +506,25 @@ textarea.entry {
 
   .entry {
     font-size: 18px;
+  }
+
+  .items input.entry {
+    font-size: 17px;
+    line-height: normal;
+    padding: 1px 2px;
+  }
+
+  .items input.entry[data-key$=".maker"],
+  .items input.entry[data-key$=".qty"],
+  .items input.entry[data-key$=".cost"],
+  .items input.entry[data-key$=".price"] {
+    font-size: 16px;
+    padding-inline: 0;
+  }
+
+  .items input.entry[data-key$=".model"] {
+    font-size: 17px;
+    padding-inline: 1px;
   }
 
   .items th {
