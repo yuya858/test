@@ -338,13 +338,11 @@ function fitMobileSheet() {
   const fitWidth = availableWidth / baseWidth;
   const fitHeight = availableHeight / baseHeight;
   const isLandscape = window.innerWidth > window.innerHeight;
-  const readableFloor = window.innerWidth >= 700 ? 0.68 : 0.46;
-  const scale = isLandscape
-    ? Math.min(1, fitWidth)
-    : Math.min(1, Math.max(fitWidth, readableFloor));
+  const readableFloor = window.innerWidth >= 700 ? 0.68 : isLandscape ? 0.56 : 0.46;
+  const scale = Math.min(1, Math.max(fitWidth, readableFloor));
   document.documentElement.style.setProperty("--sheet-scale", String(scale));
   estimateView.style.minHeight = `${Math.ceil(sheet.scrollHeight * scale)}px`;
-  wrap.style.overflowX = isLandscape ? "hidden" : "auto";
+  wrap.style.overflowX = scale > fitWidth ? "auto" : isLandscape ? "hidden" : "auto";
   wrap.style.overflowY = "auto";
 }
 
