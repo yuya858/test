@@ -320,7 +320,6 @@ function fitMobileSheet() {
   const activeElement = document.activeElement;
   if (Math.abs(viewportScale - 1) > 0.02 || activeElement?.matches?.("#estimateView [data-key]")) return;
   const estimateView = document.getElementById("estimateView");
-  const sheet = document.getElementById("sheet");
   const wrap = document.querySelector(".wrap");
   const shouldFit = window.matchMedia("(max-width: 1180px), (pointer: coarse)").matches;
   if (!shouldFit) {
@@ -330,20 +329,9 @@ function fitMobileSheet() {
     wrap.style.overflowY = "";
     return;
   }
-  const toolbar = document.querySelector(".toolbar");
-  const availableWidth = Math.max(320, window.innerWidth - 20);
-  const availableHeight = Math.max(260, window.innerHeight - toolbar.getBoundingClientRect().height - 20);
-  const baseWidth = 1120;
-  const baseHeight = sheet.scrollHeight;
-  const fitWidth = availableWidth / baseWidth;
-  const fitHeight = availableHeight / baseHeight;
-  const isLandscape = window.innerWidth > window.innerHeight;
-  const isTabletWidth = window.innerWidth >= 700;
-  const readableFloor = isTabletWidth ? 0.76 : isLandscape ? 0.64 : 0.62;
-  const scale = Math.min(1, Math.max(fitWidth, readableFloor));
-  document.documentElement.style.setProperty("--sheet-scale", String(scale));
-  estimateView.style.minHeight = `${Math.ceil(sheet.scrollHeight * scale)}px`;
-  wrap.style.overflowX = scale > fitWidth ? "auto" : isLandscape ? "hidden" : "auto";
+  document.documentElement.style.setProperty("--sheet-scale", "1");
+  estimateView.style.minHeight = "";
+  wrap.style.overflowX = "auto";
   wrap.style.overflowY = "auto";
 }
 
