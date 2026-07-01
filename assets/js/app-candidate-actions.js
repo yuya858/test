@@ -30,6 +30,36 @@ function candidateAddModelValue() {
   return String(select?.value || "").trim();
 }
 
+function clearCandidateAddInputs() {
+  [
+    "candidateText",
+    "candidatePartNoText",
+    "candidateNewMakerText",
+    "candidateNewModelText",
+  ].forEach((id) => {
+    document.getElementById(id).value = "";
+  });
+}
+
+function setCandidateDeleteConfirm(request, title) {
+  pendingCandidateDelete = request;
+  document.getElementById("candidateDeleteTitle").textContent = title;
+  document.getElementById("candidateDeleteConfirm").hidden = false;
+}
+
+function addCandidateTrashItems(items) {
+  const trash = readList(CANDIDATE_TRASH_KEY);
+  items.forEach((item) => {
+    trash.unshift({ ...item, deletedAt: nowText() });
+  });
+  writeList(CANDIDATE_TRASH_KEY, trash);
+}
+
+function deletePartNumberEntries(numberMap, maker, model, part) {
+  delete numberMap[partNumberKey(maker, model, part)];
+  delete numberMap[partMapKey(model, part)];
+}
+
 function refreshCandidateAddModelOptions() {
   const makerSelect = document.getElementById("candidateMakerSelect");
   const modelSelect = document.getElementById("candidateModelSelect");
@@ -58,10 +88,7 @@ function refreshCandidateAddMakerOptions() {
 
 function resetCandidateAddPanel() {
   candidateAddMode = "";
-  document.getElementById("candidateText").value = "";
-  document.getElementById("candidatePartNoText").value = "";
-  document.getElementById("candidateNewMakerText").value = "";
-  document.getElementById("candidateNewModelText").value = "";
+  clearCandidateAddInputs();
   document.getElementById("candidateText").placeholder = "追加する文字";
   document.getElementById("candidateMakerSelect").hidden = true;
   document.getElementById("candidateNewMakerText").hidden = true;
@@ -75,10 +102,7 @@ function resetCandidateAddPanel() {
 function openCandidateAddPanel() {
   const panel = document.getElementById("candidateAddPanel");
   panel.hidden = false;
-  document.getElementById("candidateText").value = "";
-  document.getElementById("candidatePartNoText").value = "";
-  document.getElementById("candidateNewMakerText").value = "";
-  document.getElementById("candidateNewModelText").value = "";
+  clearCandidateAddInputs();
   selectCandidateAddMode("part");
   updateCandidateActionButtons();
 }
@@ -314,21 +338,24 @@ function selectCandidateKey(key) {
 }
 
 function askCandidateDelete(key, value) {
-  pendingCandidateDelete = { type: "history", key, value };
-  document.getElementById("candidateDeleteTitle").textContent = `「${value}」を削除しますか？`;
-  document.getElementById("candidateDeleteConfirm").hidden = false;
+  setCandidateDeleteConfirm(
+    { type: "history", key, value },
+    `「${value}」を削除しますか？`
+  );
 }
 
 function askMakerModelDelete(maker, model) {
-  pendingCandidateDelete = { type: "makerModel", key: "items.model", maker, value: model };
-  document.getElementById("candidateDeleteTitle").textContent = `「${maker}」の型式「${model}」を削除しますか？`;
-  document.getElementById("candidateDeleteConfirm").hidden = false;
+  setCandidateDeleteConfirm(
+    { type: "makerModel", key: "items.model", maker, value: model },
+    `「${maker}」の型式「${model}」を削除しますか？`
+  );
 }
 
 function askMakerModelPartDelete(maker, model, part) {
-  pendingCandidateDelete = { type: "makerModelPart", key: "items.part", maker, model, value: part };
-  document.getElementById("candidateDeleteTitle").textContent = `「${maker}」の型式「${model}」の部品「${part}」を削除しますか？`;
-  document.getElementById("candidateDeleteConfirm").hidden = false;
+  setCandidateDeleteConfirm(
+    { type: "makerModelPart", key: "items.part", maker, model, value: part },
+    `「${maker}」の型式「${model}」の部品「${part}」を削除しますか？`
+  );
 }
 
 function closeCandidateDeleteConfirm() {
@@ -344,13 +371,10 @@ function confirmCandidateDelete() {
   } else if (pendingCandidateDelete?.type === "makerModelParts") {
     deleteMakerModelParts(pendingCandidateDelete.maker, pendingCandidateDelete.model, pendingCandidateDelete.values);
   } else if (pendingCandidateDelete) {
-    const trash = readList(CANDIDATE_TRASH_KEY);
-    trash.unshift({
+    addCandidateTrashItems([{
       ...pendingCandidateDelete,
       label: candidateLabel(pendingCandidateDelete.key),
-      deletedAt: nowText(),
-    });
-    writeList(CANDIDATE_TRASH_KEY, trash);
+    }]);
     forgetValue(pendingCandidateDelete.key, pendingCandidateDelete.value);
     sanitizeDeletedCandidatesFromLocal();
     renderCandidateList();
@@ -367,16 +391,13 @@ function deleteMakerModel(maker, model) {
     const partNo = partNumberForRow(maker, model, part);
     if (partNo) forgetValue("items.part_no", partNo);
   });
-  const trash = readList(CANDIDATE_TRASH_KEY);
-  trash.unshift({
+  addCandidateTrashItems([{
     type: "makerModel",
     maker,
     key: "items.model",
     value: model,
     label: `型式（${maker}）`,
-    deletedAt: nowText(),
-  });
-  writeList(CANDIDATE_TRASH_KEY, trash);
+  }]);
   sanitizeDeletedCandidatesFromLocal();
   showModelsForMaker(maker);
 }
@@ -388,12 +409,10 @@ function deleteMakerModelPart(maker, model, part) {
   writeMakerModelPartMap(map);
   const numberMap = readPartNumberMap();
   const partNo = partNumberForRow(maker, model, part);
-  delete numberMap[partNumberKey(maker, model, part)];
-  delete numberMap[partMapKey(model, part)];
+  deletePartNumberEntries(numberMap, maker, model, part);
   writePartNumberMap(numberMap);
   if (partNo) forgetValue("items.part_no", partNo);
-  const trash = readList(CANDIDATE_TRASH_KEY);
-  trash.unshift({
+  addCandidateTrashItems([{
     type: "makerModelPart",
     maker,
     model,
@@ -401,9 +420,7 @@ function deleteMakerModelPart(maker, model, part) {
     key: "items.part",
     value: part,
     label: `部品名（${maker} / ${model}）`,
-    deletedAt: nowText(),
-  });
-  writeList(CANDIDATE_TRASH_KEY, trash);
+  }]);
   sanitizeDeletedCandidatesFromLocal();
   showPartsForMakerModel(maker, model);
 }
@@ -422,14 +439,11 @@ function deleteMakerModelParts(maker, model, parts) {
   writeMakerModelPartMap(map);
   const numberMap = readPartNumberMap();
   deletedItems.forEach(({ part, partNo }) => {
-    delete numberMap[partNumberKey(maker, model, part)];
-    delete numberMap[partMapKey(model, part)];
+    deletePartNumberEntries(numberMap, maker, model, part);
     if (partNo) forgetValue("items.part_no", partNo);
   });
   writePartNumberMap(numberMap);
-  const trash = readList(CANDIDATE_TRASH_KEY);
-  deletedItems.forEach(({ part, partNo }) => {
-    trash.unshift({
+  addCandidateTrashItems(deletedItems.map(({ part, partNo }) => ({
       type: "makerModelPart",
       maker,
       model,
@@ -437,10 +451,7 @@ function deleteMakerModelParts(maker, model, parts) {
       key: "items.part",
       value: part,
       label: `部品名（${maker} / ${model}）`,
-      deletedAt: nowText(),
-    });
-  });
-  writeList(CANDIDATE_TRASH_KEY, trash);
+    })));
   sanitizeDeletedCandidatesFromLocal();
   selectedCandidateParts.clear();
   showPartsForMakerModel(maker, model);

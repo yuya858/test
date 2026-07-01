@@ -65,6 +65,26 @@ function updateCandidateActionButtons() {
   if (deleteBtn) deleteBtn.disabled = !(selectedCandidateItem || (activeCandidateMaker && activeCandidateModel && selectedCount > 0));
 }
 
+function resetCandidateSelection({ resetAddPanel = true } = {}) {
+  selectedCandidateParts.clear();
+  selectedCandidateItem = null;
+  candidateBulkAddConfirm = false;
+  if (resetAddPanel) resetCandidateAddPanel();
+}
+
+function syncCandidateTabs() {
+  document.querySelectorAll("[data-candidate-key]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
+  });
+  document.getElementById("makerCandidateTabs").style.display = "none";
+}
+
+function refreshCandidateHeader() {
+  updateCandidateContext();
+  updateCandidateActionButtons();
+  updateCandidateBackButton();
+}
+
 function renderCandidateList() {
   const target = document.getElementById("candidateList");
   const history = readHistory();
@@ -72,19 +92,11 @@ function renderCandidateList() {
   const rows = visibleCandidateValues(activeCandidateKey, values)
     .map((value) => ({ key: activeCandidateKey, value }))
     .filter((row) => matchesCandidateSearch([candidateLabel(row.key), row.value]));
-  document.querySelectorAll("[data-candidate-key]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
-  });
-  document.getElementById("makerCandidateTabs").style.display = "none";
+  syncCandidateTabs();
   activeCandidateMaker = "";
   activeCandidateModel = "";
-  selectedCandidateParts.clear();
-  selectedCandidateItem = null;
-  candidateBulkAddConfirm = false;
-  resetCandidateAddPanel();
-  updateCandidateContext();
-  updateCandidateActionButtons();
-  updateCandidateBackButton();
+  resetCandidateSelection();
+  refreshCandidateHeader();
   if (!rows.length) {
     target.innerHTML = `<div class="empty">${candidateLabel(activeCandidateKey)}の候補はまだありません</div>`;
     return;
@@ -113,22 +125,14 @@ function showModelsForMaker(maker, rememberBack = true) {
   if (rememberBack) candidateBackStack.push({ type: "list", key: activeCandidateKey });
   activeCandidateMaker = maker;
   activeCandidateModel = "";
-  selectedCandidateParts.clear();
-  selectedCandidateItem = null;
-  candidateBulkAddConfirm = false;
-  resetCandidateAddPanel();
+  resetCandidateSelection();
   const models = isDeletedCandidate("items.maker", maker)
     ? []
     : visibleCandidateValues("items.model", readMakerModelMap()[maker] || [], maker)
       .filter((model) => matchesCandidateSearch([maker, model]));
   activeCandidateKey = "items.model";
-  document.querySelectorAll("[data-candidate-key]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
-  });
-  document.getElementById("makerCandidateTabs").style.display = "none";
-  updateCandidateContext();
-  updateCandidateActionButtons();
-  updateCandidateBackButton();
+  syncCandidateTabs();
+  refreshCandidateHeader();
   const target = document.getElementById("candidateList");
   if (!models.length) {
     target.innerHTML = `<div class="empty">${escapeHtml(maker)}の型式候補はまだありません</div>`;
@@ -152,22 +156,14 @@ function showPartsForMakerModel(maker, model, rememberBack = true) {
   if (rememberBack) candidateBackStack.push({ type: "models", maker });
   activeCandidateMaker = maker;
   activeCandidateModel = model;
-  selectedCandidateParts.clear();
-  selectedCandidateItem = null;
-  candidateBulkAddConfirm = false;
-  resetCandidateAddPanel();
+  resetCandidateSelection();
   const parts = isDeletedCandidate("items.maker", maker) || isDeletedCandidate("items.model", model, maker)
     ? []
     : visibleCandidateValues("items.part", readMakerModelPartMap()[makerModelKey(maker, model)] || [], maker, model)
       .filter((part) => matchesCandidateSearch([maker, model, part, partNumberForRow(maker, model, part)]));
   activeCandidateKey = "items.part";
-  document.querySelectorAll("[data-candidate-key]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.candidateKey === activeCandidateKey);
-  });
-  document.getElementById("makerCandidateTabs").style.display = "none";
-  updateCandidateContext();
-  updateCandidateActionButtons();
-  updateCandidateBackButton();
+  syncCandidateTabs();
+  refreshCandidateHeader();
   const target = document.getElementById("candidateList");
   if (!parts.length) {
     target.innerHTML = `<div class="empty">${escapeHtml(maker)} / ${escapeHtml(model)} の部品名・部品番号はまだありません</div>`;
