@@ -338,7 +338,8 @@ function fitMobileSheet() {
   const fitWidth = availableWidth / baseWidth;
   const fitHeight = availableHeight / baseHeight;
   const isLandscape = window.innerWidth > window.innerHeight;
-  const readableFloor = window.innerWidth >= 700 ? 0.68 : isLandscape ? 0.56 : 0.46;
+  const isTabletWidth = window.innerWidth >= 700;
+  const readableFloor = isTabletWidth ? 0.76 : isLandscape ? 0.64 : 0.62;
   const scale = Math.min(1, Math.max(fitWidth, readableFloor));
   document.documentElement.style.setProperty("--sheet-scale", String(scale));
   estimateView.style.minHeight = `${Math.ceil(sheet.scrollHeight * scale)}px`;
