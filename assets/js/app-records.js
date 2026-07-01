@@ -355,13 +355,18 @@ async function checkForAppUpdate() {
     const html = await res.text();
     const match = html.match(/<meta name="mitsumori-app-version" content="([^"]+)"/);
     if (!match || match[1] === APP_VERSION) return;
-    document.open();
-    document.write(html);
-    document.close();
-    history.replaceState(null, "", `${location.pathname}${location.search || ""}`);
+    sessionStorage.setItem(UPDATE_RESTORE_KEY, `${location.pathname}${location.hash || ""}`);
+    location.replace(url);
   } catch (error) {
     console.warn("App update check failed:", error);
   }
+}
+
+function restoreCleanUrlAfterUpdate() {
+  const restoreUrl = sessionStorage.getItem(UPDATE_RESTORE_KEY);
+  if (!restoreUrl) return;
+  sessionStorage.removeItem(UPDATE_RESTORE_KEY);
+  history.replaceState(null, "", restoreUrl);
 }
 
 function installAutoUpdateCheck() {

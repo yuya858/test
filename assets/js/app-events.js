@@ -178,6 +178,7 @@ document.getElementById("permanentDeleteYesBtn").addEventListener("click", confi
 window.addEventListener("beforeprint", fitPrintRows);
 
 async function initApp() {
+  restoreCleanUrlAfterUpdate();
   await loadCloudState();
   renderRows(14);
   renderRecordList("saved");
